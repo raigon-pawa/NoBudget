@@ -146,6 +146,26 @@ Map<String, int> spendByCategory(Iterable<Tx> txs) {
   return spend;
 }
 
+/// Net worth at the close of each of the last [days] days, oldest first and ending today at [current],
+/// worked backwards through the transactions. Transfers only move money around, so they change nothing.
+List<int> netWorthTrend(int current, Iterable<Tx> txs, DateTime now, {int days = 30}) {
+  final trend = List.filled(days, current);
+  int dayNumber(DateTime d) => DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/ 86400000;
+  for (final t in txs) {
+    final change = switch (t.type) {
+      TxType.expense => -t.amount,
+      TxType.income => t.amount,
+      TxType.transfer => 0,
+    };
+    // Every day before the transaction closed without it. Future-dated ones count as today.
+    final index = min(days - 1, days - 1 - (dayNumber(now) - dayNumber(t.date)));
+    for (var i = 0; i < index; i++) {
+      trend[i] -= change;
+    }
+  }
+  return trend;
+}
+
 bool sameMonth(DateTime a, DateTime b) => a.year == b.year && a.month == b.month;
 bool sameDay(DateTime a, DateTime b) => sameMonth(a, b) && a.day == b.day;
 

@@ -78,6 +78,23 @@ class _TxSheetState extends State<TxSheet> {
     final transfer = type == TxType.transfer;
     final ok = cents != null && cents > 0 && from != null && (!transfer || (to != null && to != from));
 
+    final save = !ok
+        ? null
+        : () {
+            final t = Tx(
+              id: widget.tx?.id,
+              type: type,
+              amount: cents,
+              accountId: from!,
+              toAccountId: transfer ? to : null,
+              category: type == TxType.expense ? category : '',
+              note: note.text.trim(),
+              date: date,
+            );
+            Navigator.pop(context);
+            widget.tx == null ? store.addTx(t) : store.replaceTx(widget.tx!, t);
+          };
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -93,7 +110,13 @@ class _TxSheetState extends State<TxSheet> {
           onSelectionChanged: (s) => setState(() => type = s.first),
         ),
         _gap,
-        AmountField(amount, 'Amount', autofocus: widget.tx == null, onChanged: (_) => setState(() {})),
+        AmountField(
+          amount,
+          'Amount',
+          autofocus: widget.tx == null,
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => save?.call(),
+        ),
         _label(switch (type) {
           TxType.expense => 'Paid with',
           TxType.income => 'Into',
@@ -124,6 +147,7 @@ class _TxSheetState extends State<TxSheet> {
         TextField(
           controller: note,
           textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (_) => save?.call(),
           decoration: const InputDecoration(labelText: 'Note (optional)'),
         ),
         _gap,
@@ -143,25 +167,7 @@ class _TxSheetState extends State<TxSheet> {
           ],
         ),
         _gap,
-        FilledButton(
-          onPressed: !ok
-              ? null
-              : () {
-                  final t = Tx(
-                    id: widget.tx?.id,
-                    type: type,
-                    amount: cents,
-                    accountId: from!,
-                    toAccountId: transfer ? to : null,
-                    category: type == TxType.expense ? category : '',
-                    note: note.text.trim(),
-                    date: date,
-                  );
-                  Navigator.pop(context);
-                  widget.tx == null ? store.addTx(t) : store.replaceTx(widget.tx!, t);
-                },
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: save, child: const Text('Save')),
       ],
     );
   }
@@ -191,6 +197,22 @@ class _AccountSheetState extends State<AccountSheet> {
     final bal = balance.text.trim().isEmpty ? 0 : parseCents(balance.text);
     final lim = limit.text.trim().isEmpty ? 0 : parseCents(limit.text);
     final ok = name.text.trim().isNotEmpty && bal != null && lim != null && lim >= 0;
+
+    final save = !ok
+        ? null
+        : () {
+            Navigator.pop(context);
+            store.saveAccount(
+              Account(
+                id: a?.id,
+                name: name.text.trim(),
+                type: type,
+                balance: bal,
+                limit: type == AccountType.bank ? 0 : lim,
+                color: color,
+              ),
+            );
+          };
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -238,6 +260,7 @@ class _AccountSheetState extends State<AccountSheet> {
           type == AccountType.bank ? 'Current balance' : 'Amount owed',
           autofocus: a != null,
           onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => save?.call(),
         ),
         if (type != AccountType.bank) ...[
           _gap,
@@ -245,27 +268,11 @@ class _AccountSheetState extends State<AccountSheet> {
             limit,
             type == AccountType.credit ? 'Credit limit' : 'Original loan amount',
             onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => save?.call(),
           ),
         ],
         _gap,
-        FilledButton(
-          onPressed: !ok
-              ? null
-              : () {
-                  Navigator.pop(context);
-                  store.saveAccount(
-                    Account(
-                      id: a?.id,
-                      name: name.text.trim(),
-                      type: type,
-                      balance: bal,
-                      limit: type == AccountType.bank ? 0 : lim,
-                      color: color,
-                    ),
-                  );
-                },
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: save, child: const Text('Save')),
         if (a != null)
           TextButton(
             onPressed: () async {
@@ -303,6 +310,13 @@ class _GoalSheetState extends State<GoalSheet> {
     final sav = saved.text.trim().isEmpty ? 0 : parseCents(saved.text);
     final ok = name.text.trim().isNotEmpty && tgt != null && tgt > 0 && sav != null && sav >= 0;
 
+    final save = !ok
+        ? null
+        : () {
+            Navigator.pop(context);
+            store.saveGoal(Goal(id: g?.id, name: name.text.trim(), target: tgt, saved: sav, deadline: deadline));
+          };
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -316,9 +330,9 @@ class _GoalSheetState extends State<GoalSheet> {
           decoration: const InputDecoration(labelText: 'What are you saving for?'),
         ),
         _gap,
-        AmountField(target, 'Target', onChanged: (_) => setState(() {})),
+        AmountField(target, 'Target', onChanged: (_) => setState(() {}), onSubmitted: (_) => save?.call()),
         _gap,
-        AmountField(saved, 'Saved so far', onChanged: (_) => setState(() {})),
+        AmountField(saved, 'Saved so far', onChanged: (_) => setState(() {}), onSubmitted: (_) => save?.call()),
         _gap,
         Row(
           children: [
@@ -332,15 +346,7 @@ class _GoalSheetState extends State<GoalSheet> {
           ],
         ),
         _gap,
-        FilledButton(
-          onPressed: !ok
-              ? null
-              : () {
-                  Navigator.pop(context);
-                  store.saveGoal(Goal(id: g?.id, name: name.text.trim(), target: tgt, saved: sav, deadline: deadline));
-                },
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: save, child: const Text('Save')),
         if (g != null)
           TextButton(
             onPressed: () async {

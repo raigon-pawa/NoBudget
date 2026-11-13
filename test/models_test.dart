@@ -69,4 +69,22 @@ void main() {
     expect(goal(deadline: DateTime(2026, 1, 1)).weeklyNeeded(day), null);
     expect(goal(saved: 100000, deadline: DateTime(2026, 12, 11)).weeklyNeeded(day), null);
   });
+
+  test('net worth trend walks back through income and expenses', () {
+    final now = DateTime(2026, 11, 14, 9);
+    Tx tx(TxType type, int amount, DateTime date) => Tx(type: type, amount: amount, accountId: 'a', date: date);
+    final trend = netWorthTrend(
+      1000,
+      [
+        tx(TxType.expense, 100, DateTime(2026, 11, 14, 8)), // today
+        tx(TxType.income, 500, DateTime(2026, 11, 13)), // yesterday
+        tx(TxType.transfer, 300, DateTime(2026, 11, 13)),
+        tx(TxType.expense, 50, DateTime(2026, 12, 1)), // future-dated: already in the balance
+        tx(TxType.income, 200, DateTime(2025, 1, 1)), // before the window
+      ],
+      now,
+      days: 3,
+    );
+    expect(trend, [650, 1150, 1000]);
+  });
 }

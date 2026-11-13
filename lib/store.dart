@@ -35,13 +35,16 @@ class Store extends ChangeNotifier {
       goals = read('goals', Goal.fromMap);
       budgets = (data['budgets'] as Map<String, dynamic>).cast();
     }
+    _sort();
     loaded = true;
     notifyListeners();
   }
 
+  // Same-day entries keep the newest on top: ids are creation timestamps.
+  void _sort() => txs.sort((a, b) => b.date.compareTo(a.date) != 0 ? b.date.compareTo(a.date) : b.id!.compareTo(a.id!));
+
   void _changed() {
-    // Same-day entries keep the newest on top: ids are creation timestamps.
-    txs.sort((a, b) => b.date.compareTo(a.date) != 0 ? b.date.compareTo(a.date) : b.id!.compareTo(a.id!));
+    _sort();
     notifyListeners();
     // shortcut: the whole dataset is rewritten on every change, and a browser caps it near 5 MB (roughly
     // 25,000 transactions); move to a real database when saving gets slow or the cap gets close.

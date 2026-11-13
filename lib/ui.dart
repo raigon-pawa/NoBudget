@@ -7,9 +7,13 @@ import 'store.dart';
 
 final tab = ValueNotifier(0);
 
+/// Wide enough for a side rail and two columns (tablet in landscape, desktop browser).
+bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= 900;
+
 const panelColor = Color(0xFF111111);
 const dim = Color(0xFF8A8A8A);
 const green = Color(0xFF8FD0A0);
+const red = Color(0xFFE08080);
 
 final _aud = NumberFormat.currency(locale: 'en_AU', symbol: '\$');
 String money(int cents) => _aud.format(cents / 100);
@@ -47,6 +51,69 @@ class Panel extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(padding: padding, child: child),
+    ),
+  );
+}
+
+/// A page: one scrolling column on a phone, [left] and [right] side by side on a wide screen.
+class PageColumns extends StatelessWidget {
+  const PageColumns({super.key, this.top = const [], required this.left, this.right = const []});
+  final List<Widget> top, left, right;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isWide(context)) {
+      return ListView(
+        primary: false, // two pages overlap briefly while switching tabs
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), // bottom clears the FAB
+        children: [...top, ...left, ...right],
+      );
+    }
+    Widget column(List<Widget> children) => Expanded(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+    );
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...top,
+              Row(crossAxisAlignment: CrossAxisAlignment.start, spacing: 32, children: [column(left), column(right)]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class Empty extends StatelessWidget {
+  const Empty(this.icon, this.text, {super.key, this.action});
+  final IconData icon;
+  final String text;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 40),
+    child: Column(
+      spacing: 12,
+      children: [
+        CircleAvatar(
+          radius: 28,
+          backgroundColor: panelColor,
+          child: Icon(icon, color: dim),
+        ),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: dim),
+        ),
+        ?action,
+      ],
     ),
   );
 }
@@ -122,7 +189,11 @@ class AnimatedMoney extends StatelessWidget {
     tween: Tween(end: cents.toDouble()),
     duration: const Duration(milliseconds: 500),
     curve: Curves.easeOutCubic,
-    builder: (_, v, _) => Text(money(v.round()), style: style, maxLines: 1),
+    builder: (_, v, _) => Text(
+      money(v.round()),
+      maxLines: 1,
+      style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]).merge(style), // digits do not jiggle
+    ),
   );
 }
 
@@ -154,8 +225,9 @@ class Stat extends StatelessWidget {
 }
 
 class TxTile extends StatelessWidget {
-  const TxTile(this.t, {super.key});
+  const TxTile(this.t, {super.key, this.showDate = true});
   final Tx t;
+  final bool showDate; // off under a day heading
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +243,7 @@ class TxTile extends StatelessWidget {
       title: Text(t.note.isEmpty ? title : t.note, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '${t.type == TxType.transfer ? '$from → ${store.account(t.toAccountId)?.name ?? '?'}' : from}'
-        ' · ${DateFormat('d MMM').format(t.date)}',
+        '${showDate ? ' · ${DateFormat('d MMM').format(t.date)}' : ''}',
         style: const TextStyle(color: dim),
       ),
       trailing: Text(
@@ -183,24 +255,44 @@ class TxTile extends StatelessWidget {
   }
 }
 
-Future<T?> showSheet<T>(BuildContext context, Widget child) => showModalBottomSheet<T>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  showDragHandle: true,
-  backgroundColor: panelColor,
-  builder: (context) => Padding(
-    padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-    child: SingleChildScrollView(child: child),
-  ),
-);
+/// A form: a bottom sheet on a phone, a centred dialog on a wide screen.
+Future<T?> showSheet<T>(BuildContext context, Widget child) => isWide(context)
+    ? showDialog<T>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: panelColor,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: child),
+          ),
+        ),
+      )
+    : showModalBottomSheet<T>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: panelColor,
+        builder: (context) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+          child: SingleChildScrollView(child: child),
+        ),
+      );
 
 class AmountField extends StatelessWidget {
-  const AmountField(this.controller, this.label, {super.key, this.onChanged, this.autofocus = false, this.hint});
+  const AmountField(
+    this.controller,
+    this.label, {
+    super.key,
+    this.onChanged,
+    this.onSubmitted,
+    this.autofocus = false,
+    this.hint,
+  });
   final TextEditingController controller;
   final String label;
   final String? hint;
-  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onChanged, onSubmitted;
   final bool autofocus;
 
   @override
@@ -208,6 +300,7 @@ class AmountField extends StatelessWidget {
     controller: controller,
     autofocus: autofocus,
     onChanged: onChanged,
+    onSubmitted: onSubmitted,
     keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
     decoration: InputDecoration(labelText: label, prefixText: '\$ ', helperText: hint, helperMaxLines: 2),
   );
@@ -220,7 +313,13 @@ Future<int?> askAmount(BuildContext context, String title, {int initial = 0, Str
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: AmountField(c, 'Amount', autofocus: true, hint: hint),
+      content: AmountField(
+        c,
+        'Amount',
+        autofocus: true,
+        hint: hint,
+        onSubmitted: (_) => Navigator.pop(context, parseCents(c.text) ?? 0),
+      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(context, parseCents(c.text) ?? 0), child: const Text('OK')),

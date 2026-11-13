@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -8,7 +9,6 @@ import 'sheets.dart';
 import 'store.dart';
 import 'ui.dart';
 
-const _pagePadding = EdgeInsets.fromLTRB(16, 8, 16, 96); // bottom clears the FAB
 const _empty = TextStyle(color: dim);
 
 Widget _addButton(BuildContext context, String tooltip, Widget sheet) => IconButton(
@@ -16,6 +16,22 @@ Widget _addButton(BuildContext context, String tooltip, Widget sheet) => IconBut
   icon: const Icon(Icons.add_circle_outline),
   onPressed: () => showSheet(context, sheet),
 );
+
+/// Cards in reading order: one column on a phone, dealt alternately into two on a wide screen.
+Widget _cardPage(BuildContext context, List<Widget> top, List<Widget> cards) {
+  final wide = isWide(context);
+  return PageColumns(
+    top: top,
+    left: [
+      for (final (i, c) in cards.indexed)
+        if (!wide || i.isEven) c,
+    ],
+    right: [
+      for (final (i, c) in cards.indexed)
+        if (wide && i.isOdd) c,
+    ],
+  );
+}
 
 // ------------------------------------------------------------------- overview
 
@@ -32,24 +48,60 @@ class Overview extends StatelessWidget {
       final spent = sum(TxType.expense), income = sum(TxType.income);
       final cash = store.accounts.cash, debt = store.accounts.debt;
 
-      return ListView(
-        padding: _pagePadding,
-        children: [
-          const Text('Net worth', style: TextStyle(color: dim)),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: AnimatedMoney(
-              cash - debt,
-              style: const TextStyle(
-                fontSize: 44,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+      final trend = netWorthTrend(cash - debt, store.txs, DateTime.now());
+      final change = trend.last - trend.first;
+      final moved = trend.any((v) => v != trend.last);
+
+      return PageColumns(
+        top: [
+          Panel(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Net worth', style: TextStyle(color: dim)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedMoney(
+                          cash - debt,
+                          style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1),
+                        ),
+                      ),
+                      if (moved)
+                        Row(
+                          spacing: 6,
+                          children: [
+                            Icon(
+                              change >= 0 ? Icons.trending_up : Icons.trending_down,
+                              size: 18,
+                              color: change >= 0 ? green : red,
+                            ),
+                            Text(
+                              '${change >= 0 ? '+' : '-'}${money(change.abs())} in the last 30 days',
+                              style: const TextStyle(color: dim, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                if (moved)
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 700),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, t, _) => CustomPaint(size: const Size(double.infinity, 64), painter: _Spark(trend, t)),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Row(
             spacing: 8,
             children: [
@@ -58,6 +110,8 @@ class Overview extends StatelessWidget {
               Stat('Credit left', store.accounts.availableCredit, onTap: () => tab.value = 3),
             ],
           ),
+        ],
+        left: [
           Header('Accounts', action: _addButton(context, 'Add account', const AccountSheet())),
           Panel(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -67,6 +121,29 @@ class Overview extends StatelessWidget {
                   const Padding(
                     padding: EdgeInsets.all(16),
                     child: Text('No accounts yet', style: _empty),
+                  ),
+                // Where the cash sits, one segment per account.
+                if (cash > 0)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        height: 8,
+                        child: Row(
+                          spacing: 2,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final a in banks)
+                              if (a.balance > 0)
+                                Expanded(
+                                  flex: a.balance,
+                                  child: ColoredBox(color: Color(a.color)),
+                                ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 for (final a in banks)
                   ListTile(
@@ -78,20 +155,29 @@ class Overview extends StatelessWidget {
               ],
             ),
           ),
+        ],
+        right: [
           const Header('This month'),
           Panel(
             onTap: () => tab.value = 1,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               spacing: 12,
               children: [
                 Row(
                   children: [
                     Expanded(child: _Figure('Spent', money(spent))),
                     Expanded(child: _Figure('Income', money(income), color: green)),
-                    Expanded(child: _Figure('Left', money(income - spent))),
+                    Expanded(child: _Figure('Left', money(income - spent), color: income < spent ? red : null)),
                   ],
                 ),
-                if (income > 0) Bar(spent / income),
+                if (income > 0) ...[
+                  Bar(spent / income, color: spent > income ? red : Colors.white),
+                  Text(
+                    '${(spent / income * 100).round()}% of income spent',
+                    style: const TextStyle(color: dim, fontSize: 12),
+                  ),
+                ],
               ],
             ),
           ),
@@ -99,12 +185,59 @@ class Overview extends StatelessWidget {
             'Recent',
             action: TextButton(onPressed: () => tab.value = 1, child: const Text('See all')),
           ),
-          if (store.txs.isEmpty) const Text('Nothing yet. Tap + to add your first transaction.', style: _empty),
-          for (final t in store.txs.take(5)) TxTile(t),
+          if (store.txs.isEmpty)
+            const Empty(Icons.receipt_long_outlined, 'Nothing yet.\nAdd your first transaction with the + button.')
+          else
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Column(children: [for (final t in store.txs.take(6)) TxTile(t)]),
+            ),
         ],
       );
     },
   );
+}
+
+/// Line chart with a soft fill, drawn in from the left as [t] goes 0..1.
+class _Spark extends CustomPainter {
+  _Spark(this.values, this.t);
+  final List<int> values;
+  final double t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lo = values.reduce(min), span = max(1, values.reduce(max) - lo);
+    Offset at(int i) =>
+        Offset(size.width * i / (values.length - 1), 4 + (size.height - 12) * (1 - (values[i] - lo) / span));
+    final line = Path()..moveTo(0, at(0).dy);
+    for (var i = 1; i < values.length; i++) {
+      line.lineTo(at(i).dx, at(i).dy);
+    }
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width * t, size.height));
+    canvas.drawPath(
+      Path.from(line)
+        ..lineTo(size.width, size.height)
+        ..lineTo(0, size.height)
+        ..close(),
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.white24, Colors.transparent],
+        ).createShader(Offset.zero & size),
+    );
+    canvas.drawPath(
+      line,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round
+        ..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_Spark old) => old.t != t || !listEquals(old.values, values);
 }
 
 class _Figure extends StatelessWidget {
@@ -185,12 +318,11 @@ class _SpendingState extends State<Spending> {
       final slices = cats.where((c) => (spend[c] ?? 0) > 0).toList();
       final shown = filter == null ? txs : txs.where((t) => t.type == TxType.expense && t.category == filter).toList();
 
-      return ListView(
-        padding: _pagePadding,
-        children: [
+      return PageColumns(
+        top: [
           Row(
             children: [
-              IconButton(onPressed: () => _shift(-1), icon: const Icon(Icons.chevron_left)),
+              IconButton(tooltip: 'Previous month', onPressed: () => _shift(-1), icon: const Icon(Icons.chevron_left)),
               Expanded(
                 child: Text(
                   DateFormat('MMMM y').format(month),
@@ -198,10 +330,12 @@ class _SpendingState extends State<Spending> {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
-              IconButton(onPressed: () => _shift(1), icon: const Icon(Icons.chevron_right)),
+              IconButton(tooltip: 'Next month', onPressed: () => _shift(1), icon: const Icon(Icons.chevron_right)),
             ],
           ),
           const SizedBox(height: 8),
+        ],
+        left: [
           Center(
             child: GestureDetector(
               onTapUp: (d) {
@@ -259,18 +393,31 @@ class _SpendingState extends State<Spending> {
               ],
             ),
           ),
+        ],
+        right: [
           Header(
             filter ?? 'Transactions',
             action: filter == null
                 ? null
                 : TextButton(onPressed: () => setState(() => filter = null), child: const Text('Show all')),
           ),
-          if (shown.isEmpty) const Text('No transactions this month.', style: _empty),
+          if (shown.isEmpty) const Empty(Icons.receipt_long_outlined, 'No transactions this month.'),
           for (final (i, t) in shown.indexed) ...[
             if (i == 0 || !sameDay(shown[i - 1].date, t.date))
               Padding(
-                padding: const EdgeInsets.only(top: 10, bottom: 2, left: 4),
-                child: Text(DateFormat('EEEE d MMM').format(t.date), style: const TextStyle(color: dim, fontSize: 12)),
+                padding: const EdgeInsets.only(top: 10, bottom: 2, left: 4, right: 4),
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(color: dim, fontSize: 12),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(DateFormat('EEEE d MMM').format(t.date))),
+                      // What the day cost.
+                      if (spendByCategory(shown.where((x) => sameDay(x.date, t.date))).values.fold(0, (s, v) => s + v)
+                          case final spentThatDay && > 0)
+                        Text('-${money(spentThatDay)}'),
+                    ],
+                  ),
+                ),
               ),
             Dismissible(
               key: ValueKey(t.id),
@@ -279,7 +426,7 @@ class _SpendingState extends State<Spending> {
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.only(right: 20),
                 decoration: BoxDecoration(color: const Color(0xFF4A1C1C), borderRadius: BorderRadius.circular(16)),
-                child: const Icon(Icons.delete_outline),
+                child: const Icon(Icons.delete_outline, semanticLabel: 'Delete'),
               ),
               onDismissed: (_) {
                 store.deleteTx(t);
@@ -293,7 +440,7 @@ class _SpendingState extends State<Spending> {
                     ),
                   );
               },
-              child: TxTile(t),
+              child: TxTile(t, showDate: false),
             ),
           ],
         ],
@@ -321,7 +468,7 @@ class _SpendingState extends State<Spending> {
                   onPressed: () => _editBudget(c),
                   child: Text(
                     budget > 0 ? 'of ${money(budget)}' : 'Budget',
-                    style: TextStyle(color: over ? const Color(0xFFE08080) : dim, fontSize: 13),
+                    style: TextStyle(color: over ? red : dim, fontSize: 13),
                   ),
                 ),
               ],
@@ -329,7 +476,7 @@ class _SpendingState extends State<Spending> {
             if (budget > 0)
               Padding(
                 padding: const EdgeInsets.only(right: 8, bottom: 6),
-                child: Bar(spent / budget, color: over ? const Color(0xFFE08080) : color),
+                child: Bar(spent / budget, color: over ? red : color),
               ),
           ],
         ),
@@ -391,21 +538,26 @@ class Goals extends StatelessWidget {
     builder: (context, _) {
       final saved = store.goals.fold(0, (s, g) => s + g.saved);
       final target = store.goals.fold(0, (s, g) => s + g.target);
-      return ListView(
-        padding: _pagePadding,
-        children: [
+      return _cardPage(
+        context,
+        [
           Header('Goals', page: true, action: _addButton(context, 'Add goal', const GoalSheet())),
           if (store.goals.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 48),
-              child: Text(
-                'No goals yet.\nTap + above to start saving for something.',
-                textAlign: TextAlign.center,
-                style: _empty,
+            Empty(
+              Icons.flag_outlined,
+              'No goals yet.\nStart saving for something.',
+              action: FilledButton.tonal(
+                onPressed: () => showSheet(context, const GoalSheet()),
+                child: const Text('New goal'),
               ),
             )
-          else
+          else ...[
             Text('${money(saved)} saved of ${money(target)}', style: _empty),
+            const SizedBox(height: 8),
+            Bar(saved / target, color: saved >= target ? green : Colors.white),
+          ],
+        ],
+        [
           for (final g in store.goals)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -482,9 +634,9 @@ class Debts extends StatelessWidget {
     listenable: store,
     builder: (context, _) {
       final debts = store.accounts.where((a) => a.isDebt).toList();
-      return ListView(
-        padding: _pagePadding,
-        children: [
+      return _cardPage(
+        context,
+        [
           Header('Debts & credit', page: true, action: _addButton(context, 'Add debt', const AccountSheet(debt: true))),
           Row(
             spacing: 8,
@@ -493,11 +645,9 @@ class Debts extends StatelessWidget {
               Stat('Available credit', store.accounts.availableCredit),
             ],
           ),
-          if (debts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 48),
-              child: Text('No debts. Nice.', textAlign: TextAlign.center, style: _empty),
-            ),
+          if (debts.isEmpty) const Empty(Icons.celebration_outlined, 'No debts. Nice.'),
+        ],
+        [
           for (final a in debts)
             Padding(
               padding: const EdgeInsets.only(top: 12),
