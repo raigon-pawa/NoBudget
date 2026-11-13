@@ -50,7 +50,8 @@ class Overview extends StatelessWidget {
 
       final trend = netWorthTrend(cash - debt, store.txs, DateTime.now());
       final change = trend.last - trend.first;
-      final moved = trend.any((v) => v != trend.last);
+      // A chart is only worth showing once something happened before today.
+      final charted = trend.take(trend.length - 1).any((v) => v != trend.first);
 
       return PageColumns(
         top: [
@@ -73,7 +74,7 @@ class Overview extends StatelessWidget {
                           style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1),
                         ),
                       ),
-                      if (moved)
+                      if (change != 0)
                         Row(
                           spacing: 6,
                           children: [
@@ -91,7 +92,7 @@ class Overview extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (moved)
+                if (charted)
                   TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0, end: 1),
                     duration: const Duration(milliseconds: 700),

@@ -1,5 +1,5 @@
 name: nobudget
-description: "Personal budgeting app for Android: balances, expenses, goals, debts and available credit, stored locally."
+description: "Personal budgeting app for Android and the web: balances, expenses, goals, debts and available credit, stored on your device."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

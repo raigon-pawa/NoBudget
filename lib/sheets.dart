@@ -19,6 +19,7 @@ Widget _title(BuildContext context, String s) => Padding(
 
 Widget _accountChips(Iterable<Account> accounts, String? selected, ValueChanged<String> onPick) => Wrap(
   spacing: 8,
+  runSpacing: 4,
   children: [
     for (final a in accounts)
       ChoiceChip(
@@ -131,6 +132,7 @@ class _TxSheetState extends State<TxSheet> {
           _label('Category'),
           Wrap(
             spacing: 8,
+            runSpacing: 4,
             children: [
               for (final c in categories.entries)
                 ChoiceChip(
@@ -222,6 +224,7 @@ class _AccountSheetState extends State<AccountSheet> {
         if (a == null) ...[
           Wrap(
             spacing: 8,
+            runSpacing: 4,
             children: [
               for (final p in presets.where((p) => p.isDebt == widget.debt))
                 ActionChip(
