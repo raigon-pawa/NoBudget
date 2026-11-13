@@ -2,14 +2,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nobudget/models.dart';
 
 void main() {
-  const bank = Account(id: 1, name: 'CommBank', type: AccountType.bank, balance: 100000, color: 0);
-  const up = Account(id: 2, name: 'Up', type: AccountType.bank, balance: 5000, color: 0);
-  const afterpay = Account(id: 3, name: 'Afterpay', type: AccountType.credit, balance: 30000, limit: 200000, color: 0);
-  const loan = Account(id: 4, name: 'Latitude', type: AccountType.loan, balance: 500000, limit: 800000, color: 0);
-  final accounts = {for (final a in [bank, up, afterpay, loan]) a.id!: a};
+  const bank = Account(id: '1', name: 'CommBank', type: AccountType.bank, balance: 100000, color: 0);
+  const up = Account(id: '2', name: 'Up', type: AccountType.bank, balance: 5000, color: 0);
+  const afterpay = Account(
+    id: '3',
+    name: 'Afterpay',
+    type: AccountType.credit,
+    balance: 30000,
+    limit: 200000,
+    color: 0,
+  );
+  const loan = Account(id: '4', name: 'Latitude', type: AccountType.loan, balance: 500000, limit: 800000, color: 0);
+  final accounts = {
+    for (final a in [bank, up, afterpay, loan]) a.id!: a,
+  };
   final day = DateTime(2026, 11, 13);
 
-  Tx tx(TxType type, int amount, int from, {int? to, String category = ''}) =>
+  Tx tx(TxType type, int amount, String from, {String? to, String category = ''}) =>
       Tx(type: type, amount: amount, accountId: from, toAccountId: to, category: category, date: day);
 
   test('totals', () {
@@ -20,22 +29,25 @@ void main() {
   });
 
   test('balance deltas', () {
-    expect(balanceDeltas(tx(TxType.expense, 2500, 1), accounts), {1: -2500});
-    expect(balanceDeltas(tx(TxType.expense, 2500, 3), accounts), {3: 2500}, reason: 'BNPL purchase raises owed');
-    expect(balanceDeltas(tx(TxType.income, 2500, 1), accounts), {1: 2500});
-    expect(balanceDeltas(tx(TxType.income, 2500, 3), accounts), {3: -2500}, reason: 'refund lowers owed');
-    expect(balanceDeltas(tx(TxType.transfer, 2500, 1, to: 2), accounts), {1: -2500, 2: 2500});
-    expect(balanceDeltas(tx(TxType.transfer, 2500, 1, to: 4), accounts), {1: -2500, 4: -2500}, reason: 'repayment');
-    expect(balanceDeltas(tx(TxType.transfer, 2500, 1, to: 99), accounts), {1: -2500}, reason: 'deleted account');
+    expect(balanceDeltas(tx(TxType.expense, 2500, '1'), accounts), {'1': -2500});
+    expect(balanceDeltas(tx(TxType.expense, 2500, '3'), accounts), {'3': 2500}, reason: 'BNPL purchase raises owed');
+    expect(balanceDeltas(tx(TxType.income, 2500, '1'), accounts), {'1': 2500});
+    expect(balanceDeltas(tx(TxType.income, 2500, '3'), accounts), {'3': -2500}, reason: 'refund lowers owed');
+    expect(balanceDeltas(tx(TxType.transfer, 2500, '1', to: '2'), accounts), {'1': -2500, '2': 2500});
+    expect(balanceDeltas(tx(TxType.transfer, 2500, '1', to: '4'), accounts), {
+      '1': -2500,
+      '4': -2500,
+    }, reason: 'repayment');
+    expect(balanceDeltas(tx(TxType.transfer, 2500, '1', to: '99'), accounts), {'1': -2500}, reason: 'deleted account');
   });
 
   test('spend by category ignores income and transfers', () {
     final spend = spendByCategory([
-      tx(TxType.expense, 1000, 1, category: 'Groceries'),
-      tx(TxType.expense, 250, 3, category: 'Groceries'),
-      tx(TxType.expense, 400, 1, category: 'Fun'),
-      tx(TxType.income, 9999, 1),
-      tx(TxType.transfer, 9999, 1, to: 3),
+      tx(TxType.expense, 1000, '1', category: 'Groceries'),
+      tx(TxType.expense, 250, '3', category: 'Groceries'),
+      tx(TxType.expense, 400, '1', category: 'Fun'),
+      tx(TxType.income, 9999, '1'),
+      tx(TxType.transfer, 9999, '1', to: '3'),
     ]);
     expect(spend, {'Groceries': 1250, 'Fun': 400});
   });

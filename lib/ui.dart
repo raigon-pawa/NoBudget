@@ -83,10 +83,7 @@ class Header extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              title,
-              style: (page ? t.headlineSmall : t.titleMedium)?.copyWith(fontWeight: FontWeight.w700),
-            ),
+            child: Text(title, style: (page ? t.headlineSmall : t.titleMedium)?.copyWith(fontWeight: FontWeight.w700)),
           ),
           SizedBox(height: 40, child: action),
         ],
@@ -179,11 +176,7 @@ class TxTile extends StatelessWidget {
       ),
       trailing: Text(
         '$sign${money(t.amount)}',
-        style: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: t.type == TxType.income ? green : null,
-        ),
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.type == TxType.income ? green : null),
       ),
       onTap: () => showSheet(context, TxSheet(tx: t)),
     );
@@ -236,14 +229,14 @@ Future<int?> askAmount(BuildContext context, String title, {int initial = 0, Str
   );
 }
 
-Future<bool> confirm(BuildContext context, String question) async =>
+Future<bool> confirm(BuildContext context, String question, {String action = 'Delete'}) async =>
     await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         content: Text(question),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(action)),
         ],
       ),
     ) ??

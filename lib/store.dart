@@ -1,108 +1,115 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
 final store = Store();
 
-/// Local SQLite database plus an in-memory copy the UI listens to.
+const _key = 'data';
+
+/// All data, held in memory and saved on this device as one JSON document
+/// (app storage on Android, localStorage in a browser).
 class Store extends ChangeNotifier {
-  late final Database _db;
   List<Account> accounts = [];
   List<Tx> txs = []; // newest first
   List<Goal> goals = [];
   Map<String, int> budgets = {}; // category -> monthly limit
+  bool loaded = false;
+
+  late SharedPreferences _prefs;
 
   Future<void> open() async {
-    _db = await openDatabase(
-      'nobudget.db',
-      version: 1,
-      onCreate: (db, _) async {
-        await db.execute(
-          'CREATE TABLE accounts(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, '
-          'balance INTEGER NOT NULL, credit_limit INTEGER NOT NULL, color INTEGER NOT NULL)',
-        );
-        await db.execute(
-          'CREATE TABLE txs(id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, amount INTEGER NOT NULL, '
-          'account_id INTEGER NOT NULL, to_account_id INTEGER, category TEXT NOT NULL, note TEXT NOT NULL, '
-          'date INTEGER NOT NULL)',
-        );
-        await db.execute(
-          'CREATE TABLE goals(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, target INTEGER NOT NULL, '
-          'saved INTEGER NOT NULL, deadline INTEGER)',
-        );
-        await db.execute('CREATE TABLE budgets(category TEXT PRIMARY KEY, amount INTEGER NOT NULL)');
-        for (final a in presets) {
-          await db.insert('accounts', a.toMap());
-        }
-      },
+    _prefs = await SharedPreferences.getInstance();
+    final raw = _prefs.getString(_key);
+    if (raw == null) {
+      accounts = [for (final (i, a) in presets.indexed) Account.fromMap(newId(i), a.toMap())];
+    } else {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      List<T> read<T>(String name, T Function(String id, Map<String, Object?> m) make) => [
+        for (final e in (data[name] as Map<String, dynamic>).entries) make(e.key, e.value),
+      ];
+      accounts = read('accounts', Account.fromMap);
+      txs = read('txs', Tx.fromMap);
+      goals = read('goals', Goal.fromMap);
+      budgets = (data['budgets'] as Map<String, dynamic>).cast();
+    }
+    loaded = true;
+    notifyListeners();
+  }
+
+  void _changed() {
+    // Same-day entries keep the newest on top: ids are creation timestamps.
+    txs.sort((a, b) => b.date.compareTo(a.date) != 0 ? b.date.compareTo(a.date) : b.id!.compareTo(a.id!));
+    notifyListeners();
+    // shortcut: the whole dataset is rewritten on every change, and a browser caps it near 5 MB (roughly
+    // 25,000 transactions); move to a real database when saving gets slow or the cap gets close.
+    _prefs.setString(
+      _key,
+      jsonEncode({
+        'accounts': {for (final a in accounts) a.id: a.toMap()},
+        'txs': {for (final t in txs) t.id: t.toMap()},
+        'goals': {for (final g in goals) g.id: g.toMap()},
+        'budgets': budgets,
+      }),
     );
-    await _reload();
   }
 
-  Account? account(int? id) => accounts.where((a) => a.id == id).firstOrNull;
+  Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;
 
-  // shortcut: every write re-reads all four tables, fine for a few thousand rows; page the txs query when it gets slow.
-  Future<void> _reload() async {
-    accounts = (await _db.query('accounts', orderBy: 'id')).map(Account.fromMap).toList();
-    txs = (await _db.query('txs', orderBy: 'date DESC, id DESC')).map(Tx.fromMap).toList();
-    goals = (await _db.query('goals', orderBy: 'id')).map(Goal.fromMap).toList();
-    budgets = {for (final r in await _db.query('budgets')) r['category'] as String: r['amount'] as int};
-    notifyListeners();
-  }
-
-  Future<void> _write(Future<void> Function(Transaction) f) async {
-    try {
-      await _db.transaction(f);
-    } finally {
-      await _reload();
-    }
-  }
-
-  Future<void> _put(String table, Map<String, Object?> row) =>
-      _write((d) => d.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace));
-
-  Future<void> _applyBalances(Transaction d, Tx t, int sign) async {
+  /// Applies the balance changes of [t], or undoes them when [sign] is -1.
+  void _applyBalances(Tx t, int sign) {
     final deltas = balanceDeltas(t, {for (final a in accounts) a.id!: a});
-    for (final e in deltas.entries) {
-      await d.rawUpdate('UPDATE accounts SET balance = balance + ? WHERE id = ?', [sign * e.value, e.key]);
-    }
+    accounts = [
+      for (final a in accounts)
+        Account.fromMap(a.id, {...a.toMap(), 'balance': a.balance + sign * (deltas[a.id] ?? 0)}),
+    ];
   }
 
-  Future<void> saveAccount(Account a) => _put('accounts', a.toMap());
-
-  Future<void> deleteAccount(Account a) => _write((d) async {
-    await d.delete('txs', where: 'account_id = ? OR to_account_id = ?', whereArgs: [a.id, a.id]);
-    await d.delete('accounts', where: 'id = ?', whereArgs: [a.id]);
-  });
-
-  Future<void> addTx(Tx t) => _write((d) async {
-    await d.insert('txs', t.toMap());
-    await _applyBalances(d, t, 1);
-  });
-
-  Future<void> deleteTx(Tx t) {
-    // Drop it from memory first: a swiped-away Dismissible must leave the tree on the next frame.
-    txs = txs.where((x) => x.id != t.id).toList();
-    notifyListeners();
-    return _write((d) async {
-      await d.delete('txs', where: 'id = ?', whereArgs: [t.id]);
-      await _applyBalances(d, t, -1);
-    });
+  void saveAccount(Account a) {
+    final i = accounts.indexWhere((x) => x.id == a.id);
+    i < 0 ? accounts.add(Account.fromMap(newId(), a.toMap())) : accounts[i] = a;
+    _changed();
   }
 
-  Future<void> replaceTx(Tx old, Tx t) => _write((d) async {
-    await d.delete('txs', where: 'id = ?', whereArgs: [old.id]);
-    await _applyBalances(d, old, -1);
-    await d.insert('txs', t.toMap());
-    await _applyBalances(d, t, 1);
-  });
+  void deleteAccount(Account a) {
+    accounts.removeWhere((x) => x.id == a.id);
+    txs.removeWhere((t) => t.accountId == a.id || t.toAccountId == a.id);
+    _changed();
+  }
 
-  Future<void> saveGoal(Goal g) => _put('goals', g.toMap());
+  void addTx(Tx t) {
+    txs.add(Tx.fromMap(t.id ?? newId(), t.toMap()));
+    _applyBalances(t, 1);
+    _changed();
+  }
 
-  Future<void> deleteGoal(Goal g) => _write((d) => d.delete('goals', where: 'id = ?', whereArgs: [g.id]));
+  void deleteTx(Tx t) {
+    txs.removeWhere((x) => x.id == t.id);
+    _applyBalances(t, -1);
+    _changed();
+  }
 
-  Future<void> setBudget(String category, int amount) => amount > 0
-      ? _put('budgets', {'category': category, 'amount': amount})
-      : _write((d) => d.delete('budgets', where: 'category = ?', whereArgs: [category]));
+  void replaceTx(Tx old, Tx t) {
+    txs.removeWhere((x) => x.id == old.id);
+    _applyBalances(old, -1);
+    addTx(Tx.fromMap(old.id, t.toMap()));
+  }
+
+  void saveGoal(Goal g) {
+    final i = goals.indexWhere((x) => x.id == g.id);
+    i < 0 ? goals.add(Goal.fromMap(newId(), g.toMap())) : goals[i] = g;
+    _changed();
+  }
+
+  void deleteGoal(Goal g) {
+    goals.removeWhere((x) => x.id == g.id);
+    _changed();
+  }
+
+  void setBudget(String category, int amount) {
+    amount > 0 ? budgets[category] = amount : budgets.remove(category);
+    _changed();
+  }
 }

@@ -35,7 +35,6 @@ class Overview extends StatelessWidget {
       return ListView(
         padding: _pagePadding,
         children: [
-          const SizedBox(height: 12),
           const Text('Net worth', style: TextStyle(color: dim)),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -64,15 +63,16 @@ class Overview extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
               children: [
-                if (banks.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('No accounts yet', style: _empty)),
+                if (banks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No accounts yet', style: _empty),
+                  ),
                 for (final a in banks)
                   ListTile(
                     leading: Avatar(Color(a.color), letter: a.name),
                     title: Text(a.name),
-                    trailing: Text(
-                      money(a.balance),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
+                    trailing: Text(money(a.balance), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     onTap: () => showSheet(context, AccountSheet(account: a)),
                   ),
               ],
@@ -120,7 +120,10 @@ class _Figure extends StatelessWidget {
       const SizedBox(height: 2),
       FittedBox(
         fit: BoxFit.scaleDown,
-        child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color)),
+        child: Text(
+          value,
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color),
+        ),
       ),
     ],
   );
@@ -180,9 +183,7 @@ class _SpendingState extends State<Spending> {
       final cats = {...spend.keys, ...store.budgets.keys}.toList()
         ..sort((a, b) => (spend[b] ?? 0).compareTo(spend[a] ?? 0));
       final slices = cats.where((c) => (spend[c] ?? 0) > 0).toList();
-      final shown = filter == null
-          ? txs
-          : txs.where((t) => t.type == TxType.expense && t.category == filter).toList();
+      final shown = filter == null ? txs : txs.where((t) => t.type == TxType.expense && t.category == filter).toList();
 
       return ListView(
         padding: _pagePadding,
@@ -351,7 +352,15 @@ class _Donut extends CustomPainter {
     final paint = Paint()..style = PaintingStyle.stroke;
     final total = parts.fold(0, (s, p) => s + p.$2);
     if (total == 0) {
-      canvas.drawArc(rect, 0, 2 * pi, false, paint..color = Colors.white10..strokeWidth = 14);
+      canvas.drawArc(
+        rect,
+        0,
+        2 * pi,
+        false,
+        paint
+          ..color = Colors.white10
+          ..strokeWidth = 14,
+      );
       return;
     }
     var start = -pi / 2;
@@ -476,11 +485,7 @@ class Debts extends StatelessWidget {
       return ListView(
         padding: _pagePadding,
         children: [
-          Header(
-            'Debts & credit',
-            page: true,
-            action: _addButton(context, 'Add debt', const AccountSheet(debt: true)),
-          ),
+          Header('Debts & credit', page: true, action: _addButton(context, 'Add debt', const AccountSheet(debt: true))),
           Row(
             spacing: 8,
             children: [
@@ -542,8 +547,7 @@ class Debts extends StatelessWidget {
                           ),
                         ),
                         FilledButton.tonal(
-                          onPressed: () =>
-                              showSheet(context, TxSheet(type: TxType.transfer, toAccountId: a.id)),
+                          onPressed: () => showSheet(context, TxSheet(type: TxType.transfer, toAccountId: a.id)),
                           child: const Text('Repay'),
                         ),
                       ],

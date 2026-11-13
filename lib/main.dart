@@ -5,9 +5,9 @@ import 'sheets.dart';
 import 'store.dart';
 import 'ui.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await store.open();
+  store.open();
   runApp(const App());
 }
 
@@ -58,7 +58,14 @@ class Shell extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder(
     valueListenable: tab,
     builder: (context, index, _) => Scaffold(
-      body: SafeArea(child: const [Overview(), Spending(), Goals(), Debts()][index]),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: store,
+          builder: (context, _) => store.loaded
+              ? const [Overview(), Spending(), Goals(), Debts()][index]
+              : const Center(child: CircularProgressIndicator()),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add transaction',
         onPressed: () => showSheet(context, const TxSheet()),
