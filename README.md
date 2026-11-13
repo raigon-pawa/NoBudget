@@ -4,6 +4,8 @@ A personal budgeting app for Android and the web, built with Flutter. Everything
 and stored on your own device (or in your browser). There are no bank connections, no accounts and
 nothing is sent anywhere.
 
+**Try it in a browser: <https://raigon-pawa.github.io/NoBudget/>**
+
 <p>
   <img src="docs/overview.png" width="200" alt="Overview: net worth and account balances">
   <img src="docs/spending.png" width="200" alt="Spending: donut chart, budgets and transactions">
@@ -59,6 +61,15 @@ flutter build web --release --no-web-resources-cdn    # build/web, static files 
 The Android release build is signed with the debug key, so it is for sideloading only. The web
 build is a folder of static files; to try it locally, run `python3 -m http.server` inside
 `build/web`. If it will be served from a sub-path, add `--base-href /that-path/` to the build.
+
+The live site is the `gh-pages` branch, served by GitHub Pages. It does not update by itself; to
+publish the current code:
+
+```sh
+flutter build web --release --no-web-resources-cdn --base-href /NoBudget/ -o /tmp/nobudget-site
+cd /tmp/nobudget-site && touch .nojekyll && git init -b gh-pages && git add -A && git commit -m "Website build"
+git push -f https://github.com/raigon-pawa/NoBudget.git gh-pages
+```
 
 Data stays where it was entered: the Android app and each browser keep their own copy, and clearing
 a browser's site data removes it. Sign-in and cloud sync are in progress on the
