@@ -17,7 +17,7 @@ Widget _title(BuildContext context, String s) => Padding(
   child: Text(s, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
 );
 
-Widget _accountChips(Iterable<Account> accounts, int? selected, ValueChanged<int> onPick) => Wrap(
+Widget _accountChips(Iterable<Account> accounts, String? selected, ValueChanged<String> onPick) => Wrap(
   spacing: 8,
   children: [
     for (final a in accounts)
@@ -53,7 +53,7 @@ class TxSheet extends StatefulWidget {
   const TxSheet({super.key, this.tx, this.type = TxType.expense, this.toAccountId});
   final Tx? tx;
   final TxType type;
-  final int? toAccountId;
+  final String? toAccountId;
 
   @override
   State<TxSheet> createState() => _TxSheetState();
@@ -63,9 +63,9 @@ class _TxSheetState extends State<TxSheet> {
   late var type = widget.tx?.type ?? widget.type;
   late final amount = TextEditingController(text: centsText(widget.tx?.amount ?? 0));
   late final note = TextEditingController(text: widget.tx?.note);
-  late int? to = widget.tx?.toAccountId ?? widget.toAccountId;
+  late String? to = widget.tx?.toAccountId ?? widget.toAccountId;
   // New entries start on the last used account; repayments start from a bank account.
-  late int? from =
+  late String? from =
       widget.tx?.accountId ??
       (widget.toAccountId == null ? store.txs.firstOrNull?.accountId : null) ??
       store.accounts.where((a) => !a.isDebt).firstOrNull?.id;
@@ -99,11 +99,7 @@ class _TxSheetState extends State<TxSheet> {
           TxType.income => 'Into',
           TxType.transfer => 'From',
         }),
-        _accountChips(
-          store.accounts.where((a) => a.type != AccountType.loan),
-          from,
-          (id) => setState(() => from = id),
-        ),
+        _accountChips(store.accounts.where((a) => a.type != AccountType.loan), from, (id) => setState(() => from = id)),
         if (transfer) ...[
           _label('To (pick a debt to record a repayment)'),
           _accountChips(store.accounts.where((a) => a.id != from), to, (id) => setState(() => to = id)),
@@ -341,9 +337,7 @@ class _GoalSheetState extends State<GoalSheet> {
               ? null
               : () {
                   Navigator.pop(context);
-                  store.saveGoal(
-                    Goal(id: g?.id, name: name.text.trim(), target: tgt, saved: sav, deadline: deadline),
-                  );
+                  store.saveGoal(Goal(id: g?.id, name: name.text.trim(), target: tgt, saved: sav, deadline: deadline));
                 },
           child: const Text('Save'),
         ),

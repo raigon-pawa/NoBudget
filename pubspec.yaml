@@ -1,5 +1,5 @@
 name: nobudget
-description: "Personal budgeting app for Android: balances, expenses, goals, debts and available credit, stored locally."
+description: "Personal budgeting app for Android: balances, expenses, goals, debts and available credit, with per-user cloud storage."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,8 +34,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  sqflite: ^2.4.6
   intl: ^0.20.3
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  cloud_firestore: ^7.1.0
 
 dev_dependencies:
   flutter_test:

@@ -1,108 +1,140 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 
 import 'models.dart';
 
 final store = Store();
 
-/// Local SQLite database plus an in-memory copy the UI listens to.
+typedef _Docs = List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+
+/// The signed-in user's data, mirrored live from Cloud Firestore (users/{uid}/...).
+/// Firestore keeps an on-device copy, so reads and writes also work offline and sync later.
 class Store extends ChangeNotifier {
-  late final Database _db;
   List<Account> accounts = [];
   List<Tx> txs = []; // newest first
   List<Goal> goals = [];
   Map<String, int> budgets = {}; // category -> monthly limit
+  bool loaded = false;
 
-  Future<void> open() async {
-    _db = await openDatabase(
-      'nobudget.db',
-      version: 1,
-      onCreate: (db, _) async {
-        await db.execute(
-          'CREATE TABLE accounts(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, '
-          'balance INTEGER NOT NULL, credit_limit INTEGER NOT NULL, color INTEGER NOT NULL)',
-        );
-        await db.execute(
-          'CREATE TABLE txs(id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, amount INTEGER NOT NULL, '
-          'account_id INTEGER NOT NULL, to_account_id INTEGER, category TEXT NOT NULL, note TEXT NOT NULL, '
-          'date INTEGER NOT NULL)',
-        );
-        await db.execute(
-          'CREATE TABLE goals(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, target INTEGER NOT NULL, '
-          'saved INTEGER NOT NULL, deadline INTEGER)',
-        );
-        await db.execute('CREATE TABLE budgets(category TEXT PRIMARY KEY, amount INTEGER NOT NULL)');
-        for (final a in presets) {
-          await db.insert('accounts', a.toMap());
-        }
-      },
-    );
-    await _reload();
-  }
+  /// Told about writes the server rejected (they are rolled back on screen).
+  void Function(String message)? onError;
 
-  Account? account(int? id) => accounts.where((a) => a.id == id).firstOrNull;
+  List<StreamSubscription<void>> _subs = [];
 
-  // shortcut: every write re-reads all four tables, fine for a few thousand rows; page the txs query when it gets slow.
-  Future<void> _reload() async {
-    accounts = (await _db.query('accounts', orderBy: 'id')).map(Account.fromMap).toList();
-    txs = (await _db.query('txs', orderBy: 'date DESC, id DESC')).map(Tx.fromMap).toList();
-    goals = (await _db.query('goals', orderBy: 'id')).map(Goal.fromMap).toList();
-    budgets = {for (final r in await _db.query('budgets')) r['category'] as String: r['amount'] as int};
+  CollectionReference<Map<String, dynamic>> _col(String name) =>
+      FirebaseFirestore.instance.collection('users/${FirebaseAuth.instance.currentUser!.uid}/$name');
+
+  /// Follows sign-in and sign-out: each user only ever sees their own collections.
+  void open() => FirebaseAuth.instance.authStateChanges().listen((user) {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    accounts = [];
+    txs = [];
+    goals = [];
+    budgets = {};
+    loaded = false;
+    _subs = user == null
+        ? []
+        : [
+            // Ids are creation timestamps, so the default id order is the order things were added.
+            _listen(_col('accounts'), (docs) {
+              accounts = [for (final d in docs) Account.fromMap(d.id, d.data())];
+              loaded = true;
+            }),
+            // shortcut: every transaction is loaded (one billed read each per app start), fine for a few
+            // thousand; query by month when the free 50,000 reads a day gets tight.
+            _listen(_col('txs').orderBy('date', descending: true), (docs) {
+              txs = [for (final d in docs) Tx.fromMap(d.id, d.data())];
+            }),
+            _listen(_col('goals'), (docs) {
+              goals = [for (final d in docs) Goal.fromMap(d.id, d.data())];
+            }),
+            _listen(_col('budgets'), (docs) {
+              budgets = {for (final d in docs) d.id: d.data()['amount'] as int};
+            }),
+          ];
     notifyListeners();
+  });
+
+  StreamSubscription<void> _listen(Query<Map<String, dynamic>> query, void Function(_Docs) apply) =>
+      query.snapshots().listen((s) {
+        apply(s.docs);
+        notifyListeners();
+      }, onError: _failed);
+
+  void _failed(Object e) {
+    debugPrint('Firestore: $e');
+    if (FirebaseAuth.instance.currentUser != null) onError?.call('Could not sync: $e');
   }
 
-  Future<void> _write(Future<void> Function(Transaction) f) async {
-    try {
-      await _db.transaction(f);
-    } finally {
-      await _reload();
-    }
-  }
+  Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;
 
-  Future<void> _put(String table, Map<String, Object?> row) =>
-      _write((d) => d.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace));
+  // Writes show up through the listeners straight away; the future only completes once the server has them.
+  Future<void> _commit(WriteBatch b) => b.commit().catchError(_failed);
 
-  Future<void> _applyBalances(Transaction d, Tx t, int sign) async {
-    final deltas = balanceDeltas(t, {for (final a in accounts) a.id!: a});
+  WriteBatch get _batch => FirebaseFirestore.instance.batch();
+
+  Map<String, int> _deltas(Tx t, int sign) =>
+      balanceDeltas(t, {for (final a in accounts) a.id!: a}).map((id, v) => MapEntry(id, sign * v));
+
+  void _applyBalances(WriteBatch b, Map<String, int> deltas) {
     for (final e in deltas.entries) {
-      await d.rawUpdate('UPDATE accounts SET balance = balance + ? WHERE id = ?', [sign * e.value, e.key]);
+      if (e.value != 0) b.update(_col('accounts').doc(e.key), {'balance': FieldValue.increment(e.value)});
     }
   }
 
-  Future<void> saveAccount(Account a) => _put('accounts', a.toMap());
+  /// The starting accounts for a newly registered user.
+  Future<void> seedPresets() {
+    final b = _batch;
+    for (final (i, a) in presets.indexed) {
+      b.set(_col('accounts').doc(newId(i)), a.toMap());
+    }
+    return _commit(b);
+  }
 
-  Future<void> deleteAccount(Account a) => _write((d) async {
-    await d.delete('txs', where: 'account_id = ? OR to_account_id = ?', whereArgs: [a.id, a.id]);
-    await d.delete('accounts', where: 'id = ?', whereArgs: [a.id]);
-  });
+  Future<void> saveAccount(Account a) => _commit(_batch..set(_col('accounts').doc(a.id ?? newId()), a.toMap()));
 
-  Future<void> addTx(Tx t) => _write((d) async {
-    await d.insert('txs', t.toMap());
-    await _applyBalances(d, t, 1);
-  });
+  Future<void> deleteAccount(Account a) {
+    final b = _batch..delete(_col('accounts').doc(a.id));
+    for (final t in txs.where((t) => t.accountId == a.id || t.toAccountId == a.id)) {
+      b.delete(_col('txs').doc(t.id));
+    }
+    return _commit(b);
+  }
+
+  Future<void> addTx(Tx t) {
+    final b = _batch..set(_col('txs').doc(t.id ?? newId()), t.toMap());
+    _applyBalances(b, _deltas(t, 1));
+    return _commit(b);
+  }
 
   Future<void> deleteTx(Tx t) {
     // Drop it from memory first: a swiped-away Dismissible must leave the tree on the next frame.
     txs = txs.where((x) => x.id != t.id).toList();
     notifyListeners();
-    return _write((d) async {
-      await d.delete('txs', where: 'id = ?', whereArgs: [t.id]);
-      await _applyBalances(d, t, -1);
-    });
+    final b = _batch..delete(_col('txs').doc(t.id));
+    _applyBalances(b, _deltas(t, -1));
+    return _commit(b);
   }
 
-  Future<void> replaceTx(Tx old, Tx t) => _write((d) async {
-    await d.delete('txs', where: 'id = ?', whereArgs: [old.id]);
-    await _applyBalances(d, old, -1);
-    await d.insert('txs', t.toMap());
-    await _applyBalances(d, t, 1);
-  });
+  Future<void> replaceTx(Tx old, Tx t) {
+    final deltas = _deltas(old, -1);
+    _deltas(t, 1).forEach((id, v) => deltas[id] = (deltas[id] ?? 0) + v);
+    final b = _batch..set(_col('txs').doc(old.id), t.toMap());
+    _applyBalances(b, deltas);
+    return _commit(b);
+  }
 
-  Future<void> saveGoal(Goal g) => _put('goals', g.toMap());
+  Future<void> saveGoal(Goal g) => _commit(_batch..set(_col('goals').doc(g.id ?? newId()), g.toMap()));
 
-  Future<void> deleteGoal(Goal g) => _write((d) => d.delete('goals', where: 'id = ?', whereArgs: [g.id]));
+  Future<void> deleteGoal(Goal g) => _commit(_batch..delete(_col('goals').doc(g.id)));
 
-  Future<void> setBudget(String category, int amount) => amount > 0
-      ? _put('budgets', {'category': category, 'amount': amount})
-      : _write((d) => d.delete('budgets', where: 'category = ?', whereArgs: [category]));
+  Future<void> setBudget(String category, int amount) {
+    final doc = _col('budgets').doc(category);
+    return _commit(amount > 0 ? (_batch..set(doc, {'amount': amount})) : (_batch..delete(doc)));
+  }
 }

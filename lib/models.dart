@@ -2,6 +2,9 @@ import 'dart:math';
 
 // All money is integer cents (AUD).
 
+/// Document id that sorts by creation time, so lists keep the order things were added in.
+String newId([int offset = 0]) => '${DateTime.now().microsecondsSinceEpoch + offset}';
+
 enum AccountType { bank, credit, loan }
 
 enum TxType { expense, income, transfer }
@@ -16,7 +19,7 @@ class Account {
     required this.color,
   });
 
-  final int? id;
+  final String? id;
   final String name;
   final AccountType type;
   final int balance; // bank: money held. credit/loan: amount owed.
@@ -26,22 +29,14 @@ class Account {
   bool get isDebt => type != AccountType.bank;
   int get available => type == AccountType.credit ? max(0, limit - balance) : 0;
 
-  Account.fromMap(Map<String, Object?> m)
-    : id = m['id'] as int,
-      name = m['name'] as String,
+  Account.fromMap(this.id, Map<String, Object?> m)
+    : name = m['name'] as String,
       type = AccountType.values.byName(m['type'] as String),
       balance = m['balance'] as int,
-      limit = m['credit_limit'] as int,
+      limit = m['limit'] as int,
       color = m['color'] as int;
 
-  Map<String, Object?> toMap() => {
-    'id': id,
-    'name': name,
-    'type': type.name,
-    'balance': balance,
-    'credit_limit': limit,
-    'color': color,
-  };
+  Map<String, Object?> toMap() => {'name': name, 'type': type.name, 'balance': balance, 'limit': limit, 'color': color};
 }
 
 const presets = [
@@ -67,31 +62,29 @@ class Tx {
     required this.date,
   });
 
-  final int? id;
+  final String? id;
   final TxType type;
   final int amount; // always positive
-  final int accountId;
-  final int? toAccountId; // transfers only
+  final String accountId;
+  final String? toAccountId; // transfers only
   final String category; // expenses only
   final String note;
   final DateTime date;
 
-  Tx.fromMap(Map<String, Object?> m)
-    : id = m['id'] as int,
-      type = TxType.values.byName(m['type'] as String),
+  Tx.fromMap(this.id, Map<String, Object?> m)
+    : type = TxType.values.byName(m['type'] as String),
       amount = m['amount'] as int,
-      accountId = m['account_id'] as int,
-      toAccountId = m['to_account_id'] as int?,
+      accountId = m['accountId'] as String,
+      toAccountId = m['toAccountId'] as String?,
       category = m['category'] as String,
       note = m['note'] as String,
       date = DateTime.fromMillisecondsSinceEpoch(m['date'] as int);
 
   Map<String, Object?> toMap() => {
-    'id': id,
     'type': type.name,
     'amount': amount,
-    'account_id': accountId,
-    'to_account_id': toAccountId,
+    'accountId': accountId,
+    'toAccountId': toAccountId,
     'category': category,
     'note': note,
     'date': date.millisecondsSinceEpoch,
@@ -101,7 +94,7 @@ class Tx {
 class Goal {
   const Goal({this.id, required this.name, required this.target, this.saved = 0, this.deadline});
 
-  final int? id;
+  final String? id;
   final String name;
   final int target;
   final int saved;
@@ -114,15 +107,13 @@ class Goal {
     return ((target - saved) / max(1, (d.difference(now).inDays / 7).ceil())).ceil();
   }
 
-  Goal.fromMap(Map<String, Object?> m)
-    : id = m['id'] as int,
-      name = m['name'] as String,
+  Goal.fromMap(this.id, Map<String, Object?> m)
+    : name = m['name'] as String,
       target = m['target'] as int,
       saved = m['saved'] as int,
       deadline = m['deadline'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['deadline'] as int);
 
   Map<String, Object?> toMap() => {
-    'id': id,
     'name': name,
     'target': target,
     'saved': saved,
@@ -138,7 +129,7 @@ extension Totals on Iterable<Account> {
 
 /// Balance change per account id for [t]. Debt balances mean "amount owed",
 /// so money leaving a debt account raises its balance and money entering lowers it.
-Map<int, int> balanceDeltas(Tx t, Map<int, Account> accounts) {
+Map<String, int> balanceDeltas(Tx t, Map<String, Account> accounts) {
   int out(Account a) => a.isDebt ? t.amount : -t.amount;
   final from = accounts[t.accountId], to = accounts[t.toAccountId];
   return {

@@ -1,5 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'firebase_options.dart';
+import 'login.dart';
 import 'pages.dart';
 import 'sheets.dart';
 import 'store.dart';
@@ -7,7 +11,10 @@ import 'ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await store.open();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  store
+    ..onError = ((m) => messenger.currentState?.showSnackBar(SnackBar(content: Text(m))))
+    ..open();
   runApp(const App());
 }
 
@@ -17,6 +24,7 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'NoBudget',
+    scaffoldMessengerKey: messenger,
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       brightness: Brightness.dark,
@@ -47,7 +55,14 @@ class App extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     ),
-    home: const Shell(),
+    home: StreamBuilder(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, auth) => auth.connectionState == ConnectionState.waiting
+          ? const Scaffold()
+          : auth.data == null
+          ? const LoginPage()
+          : const Shell(),
+    ),
   );
 }
 
@@ -58,7 +73,14 @@ class Shell extends StatelessWidget {
   Widget build(BuildContext context) => ValueListenableBuilder(
     valueListenable: tab,
     builder: (context, index, _) => Scaffold(
-      body: SafeArea(child: const [Overview(), Spending(), Goals(), Debts()][index]),
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: store,
+          builder: (context, _) => store.loaded
+              ? const [Overview(), Spending(), Goals(), Debts()][index]
+              : const Center(child: CircularProgressIndicator()),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add transaction',
         onPressed: () => showSheet(context, const TxSheet()),
