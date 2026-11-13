@@ -72,6 +72,7 @@ class _TxSheetState extends State<TxSheet> {
       store.accounts.where((a) => !a.isDebt).firstOrNull?.id;
   late var category = widget.tx?.type == TxType.expense ? widget.tx!.category : categories.keys.first;
   late var date = widget.tx?.date ?? DateTime.now();
+  var repeat = Repeat.never;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +95,7 @@ class _TxSheetState extends State<TxSheet> {
             );
             Navigator.pop(context);
             widget.tx == null ? store.addTx(t) : store.replaceTx(widget.tx!, t);
+            if (repeat != Repeat.never) store.addRecurring(t, repeat);
           };
 
     return Column(
@@ -156,6 +158,21 @@ class _TxSheetState extends State<TxSheet> {
         Row(
           children: [
             _dateChip(context, date, '', DateTime(2020), (d) => setState(() => date = d)),
+            // Only a new entry can be set to repeat; stop one from the Repeating list.
+            if (widget.tx == null) ...[
+              const SizedBox(width: 8),
+              PopupMenuButton<Repeat>(
+                tooltip: 'Repeat',
+                onSelected: (r) => setState(() => repeat = r),
+                itemBuilder: (_) => [
+                  for (final r in Repeat.values) PopupMenuItem(value: r, child: Text(repeatLabel(r))),
+                ],
+                child: Chip(
+                  avatar: Icon(Icons.repeat, size: 16, color: repeat == Repeat.never ? dim : Colors.white),
+                  label: Text(repeat == Repeat.never ? 'Repeat' : repeatLabel(repeat)),
+                ),
+              ),
+            ],
             const Spacer(),
             if (widget.tx != null)
               IconButton(

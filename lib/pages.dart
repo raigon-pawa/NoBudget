@@ -275,6 +275,7 @@ class Spending extends StatefulWidget {
 class _SpendingState extends State<Spending> {
   var month = DateTime(DateTime.now().year, DateTime.now().month);
   String? filter; // category picked on the donut or its legend
+  final search = TextEditingController();
 
   void _shift(int by) => setState(() {
     month = DateTime(month.year, month.month + by);
@@ -317,7 +318,21 @@ class _SpendingState extends State<Spending> {
       final cats = {...spend.keys, ...store.budgets.keys}.toList()
         ..sort((a, b) => (spend[b] ?? 0).compareTo(spend[a] ?? 0));
       final slices = cats.where((c) => (spend[c] ?? 0) > 0).toList();
-      final shown = filter == null ? txs : txs.where((t) => t.type == TxType.expense && t.category == filter).toList();
+      // A search looks through every month: note, category, account names and amount.
+      final query = search.text.trim().toLowerCase();
+      bool matches(Tx t) => [
+        t.note,
+        t.category,
+        t.type.name,
+        store.account(t.accountId)?.name,
+        store.account(t.toAccountId)?.name,
+        (t.amount / 100).toStringAsFixed(2),
+      ].any((s) => s != null && s.toLowerCase().contains(query));
+      final shown = query.isNotEmpty
+          ? store.txs.where(matches).toList()
+          : filter == null
+          ? txs
+          : txs.where((t) => t.type == TxType.expense && t.category == filter).toList();
 
       return PageColumns(
         top: [
@@ -394,15 +409,60 @@ class _SpendingState extends State<Spending> {
               ],
             ),
           ),
+          if (store.recurring.isNotEmpty) ...[
+            const Header('Repeating'),
+            Panel(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Column(
+                children: [
+                  for (final r in store.recurring)
+                    TxTile(
+                      r.tx,
+                      detail: '${repeatLabel(r.every)} · next ${DateFormat('d MMM').format(r.next)}',
+                      onTap: () async {
+                        if (await confirm(
+                          context,
+                          'Stop repeating this? Transactions it already added stay.',
+                          action: 'Stop',
+                        )) {
+                          store.deleteRecurring(r);
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
         ],
         right: [
           Header(
-            filter ?? 'Transactions',
-            action: filter == null
+            query.isNotEmpty ? '${shown.length} found' : filter ?? 'Transactions',
+            action: filter == null || query.isNotEmpty
                 ? null
                 : TextButton(onPressed: () => setState(() => filter = null), child: const Text('Show all')),
           ),
-          if (shown.isEmpty) const Empty(Icons.receipt_long_outlined, 'No transactions this month.'),
+          TextField(
+            controller: search,
+            onChanged: (_) => setState(() {}),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search all transactions',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(search.clear),
+                    ),
+            ),
+          ),
+          if (shown.isEmpty)
+            Empty(
+              Icons.receipt_long_outlined,
+              query.isNotEmpty ? 'Nothing matches "${search.text.trim()}".' : 'No transactions this month.',
+            ),
           for (final (i, t) in shown.indexed) ...[
             if (i == 0 || !sameDay(shown[i - 1].date, t.date))
               Padding(
@@ -411,7 +471,7 @@ class _SpendingState extends State<Spending> {
                   style: const TextStyle(color: dim, fontSize: 12),
                   child: Row(
                     children: [
-                      Expanded(child: Text(DateFormat('EEEE d MMM').format(t.date))),
+                      Expanded(child: Text(DateFormat(query.isEmpty ? 'EEEE d MMM' : 'EEEE d MMM y').format(t.date))),
                       // What the day cost.
                       if (spendByCategory(shown.where((x) => sameDay(x.date, t.date))).values.fold(0, (s, v) => s + v)
                           case final spentThatDay && > 0)

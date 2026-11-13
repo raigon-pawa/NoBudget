@@ -32,6 +32,13 @@ const categories = <String, (IconData, Color)>{
   'Travel': (Icons.flight_outlined, Color(0xFF80C0A0)),
   'Other': (Icons.more_horiz, Color(0xFF909090)),
 };
+String repeatLabel(Repeat r) => switch (r) {
+  Repeat.never => 'Does not repeat',
+  Repeat.weekly => 'Every week',
+  Repeat.fortnightly => 'Every 2 weeks',
+  Repeat.monthly => 'Every month',
+};
+
 (IconData, Color) cat(String name) => categories[name] ?? categories['Other']!;
 
 class Panel extends StatelessWidget {
@@ -225,9 +232,11 @@ class Stat extends StatelessWidget {
 }
 
 class TxTile extends StatelessWidget {
-  const TxTile(this.t, {super.key, this.showDate = true});
+  const TxTile(this.t, {super.key, this.showDate = true, this.detail, this.onTap});
   final Tx t;
   final bool showDate; // off under a day heading
+  final String? detail; // shown instead of the account and date
+  final VoidCallback? onTap; // instead of opening the transaction
 
   @override
   Widget build(BuildContext context) {
@@ -242,15 +251,16 @@ class TxTile extends StatelessWidget {
       leading: Avatar(color, icon: icon),
       title: Text(t.note.isEmpty ? title : t.note, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${t.type == TxType.transfer ? '$from → ${store.account(t.toAccountId)?.name ?? '?'}' : from}'
-        '${showDate ? ' · ${DateFormat('d MMM').format(t.date)}' : ''}',
+        detail ??
+            '${t.type == TxType.transfer ? '$from → ${store.account(t.toAccountId)?.name ?? '?'}' : from}'
+                '${showDate ? ' · ${DateFormat('d MMM').format(t.date)}' : ''}',
         style: const TextStyle(color: dim),
       ),
       trailing: Text(
         '$sign${money(t.amount)}',
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.type == TxType.income ? green : null),
       ),
-      onTap: () => showSheet(context, TxSheet(tx: t)),
+      onTap: onTap ?? () => showSheet(context, TxSheet(tx: t)),
     );
   }
 }

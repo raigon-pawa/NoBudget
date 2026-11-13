@@ -45,4 +45,38 @@ void main() {
     again.deleteAccount(again.account(klarna)!);
     expect(again.txs.single.type, TxType.income);
   });
+
+  test('repeating transactions catch up when the app opens', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = Store();
+    await s.open(DateTime(2026, 11, 1));
+    final bank = s.accounts.first.id!;
+    final rent = Tx(
+      type: TxType.expense,
+      amount: 10000,
+      accountId: bank,
+      category: 'Rent',
+      date: DateTime(2026, 11, 1),
+    );
+    s.addTx(rent);
+    s.addRecurring(rent, Repeat.weekly);
+    expect(s.account(bank)!.balance, -10000);
+
+    // Opened again 15 days later: the 8th and 15th were missed, the 22nd is not due yet.
+    final later = Store();
+    await later.open(DateTime(2026, 11, 16));
+    expect(later.txs.map((t) => t.date.day), [15, 8, 1]);
+    expect(later.account(bank)!.balance, -30000);
+    expect(later.recurring.single.next, DateTime(2026, 11, 22));
+
+    // Nothing is added twice.
+    final again = Store();
+    await again.open(DateTime(2026, 11, 16));
+    expect(again.txs.length, 3);
+
+    again.deleteRecurring(again.recurring.single);
+    final stopped = Store();
+    await stopped.open(DateTime(2027));
+    expect(stopped.txs.length, 3);
+  });
 }

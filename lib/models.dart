@@ -9,6 +9,8 @@ enum AccountType { bank, credit, loan }
 
 enum TxType { expense, income, transfer }
 
+enum Repeat { never, weekly, fortnightly, monthly }
+
 class Account {
   const Account({
     this.id,
@@ -89,6 +91,35 @@ class Tx {
     'note': note,
     'date': date.millisecondsSinceEpoch,
   };
+}
+
+/// A transaction that adds itself again on a schedule.
+class Recurring {
+  const Recurring({this.id, required this.tx, required this.every, this.done = 0});
+
+  final String? id;
+  final Tx tx; // the template; its date is the first occurrence
+  final Repeat every;
+  final int done; // occurrences already added as transactions
+
+  DateTime get next => occurrence(tx.date, every, done);
+
+  Recurring.fromMap(this.id, Map<String, Object?> m)
+    : tx = Tx.fromMap(null, m),
+      every = Repeat.values.byName(m['every'] as String),
+      done = m['done'] as int;
+
+  Map<String, Object?> toMap() => {...tx.toMap(), 'every': every.name, 'done': done};
+}
+
+/// The date of occurrence [n] (0 is [first] itself). Counting from the first date, instead of stepping
+/// from the previous one, keeps a monthly 31st on the last day of short months without drifting to the 28th.
+DateTime occurrence(DateTime first, Repeat every, int n) {
+  if (every != Repeat.monthly) {
+    return DateTime(first.year, first.month, first.day + n * (every == Repeat.weekly ? 7 : 14));
+  }
+  final lastDay = DateTime(first.year, first.month + n + 1, 0).day;
+  return DateTime(first.year, first.month + n, min(first.day, lastDay));
 }
 
 class Goal {

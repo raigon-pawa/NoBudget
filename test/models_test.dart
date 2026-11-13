@@ -87,4 +87,13 @@ void main() {
     );
     expect(trend, [650, 1150, 1000]);
   });
+
+  test('repeat dates', () {
+    final d = DateTime(2026, 1, 31);
+    expect(occurrence(d, Repeat.weekly, 2), DateTime(2026, 2, 14));
+    expect(occurrence(d, Repeat.fortnightly, 1), DateTime(2026, 2, 14));
+    expect(occurrence(d, Repeat.monthly, 1), DateTime(2026, 2, 28)); // short month
+    expect(occurrence(d, Repeat.monthly, 2), DateTime(2026, 3, 31)); // and back to the 31st
+    expect(occurrence(d, Repeat.monthly, 12), DateTime(2027, 1, 31));
+  });
 }

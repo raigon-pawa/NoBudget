@@ -16,28 +16,58 @@ class Store extends ChangeNotifier {
   List<Tx> txs = []; // newest first
   List<Goal> goals = [];
   Map<String, int> budgets = {}; // category -> monthly limit
+  List<Recurring> recurring = [];
   bool loaded = false;
 
   late SharedPreferences _prefs;
 
-  Future<void> open() async {
+  Future<void> open([DateTime? now]) async {
     _prefs = await SharedPreferences.getInstance();
     final raw = _prefs.getString(_key);
     if (raw == null) {
       accounts = [for (final (i, a) in presets.indexed) Account.fromMap(newId(i), a.toMap())];
     } else {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      List<T> read<T>(String name, T Function(String id, Map<String, Object?> m) make) => [
-        for (final e in (data[name] as Map<String, dynamic>).entries) make(e.key, e.value),
-      ];
-      accounts = read('accounts', Account.fromMap);
-      txs = read('txs', Tx.fromMap);
-      goals = read('goals', Goal.fromMap);
-      budgets = (data['budgets'] as Map<String, dynamic>).cast();
+      _load(raw);
     }
     _sort();
+    _addDue(now ?? DateTime.now());
     loaded = true;
     notifyListeners();
+  }
+
+  /// Reads a saved document. Everything is parsed before anything is replaced, so bad input changes nothing.
+  void _load(String raw) {
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    // Sections added in later versions are missing from older documents.
+    List<T> read<T>(String name, T Function(String id, Map<String, Object?> m) make) => [
+      for (final e in (data[name] as Map<String, dynamic>? ?? {}).entries) make(e.key, e.value),
+    ];
+    final a = read('accounts', Account.fromMap), t = read('txs', Tx.fromMap), g = read('goals', Goal.fromMap);
+    final r = read('recurring', Recurring.fromMap);
+    final b = Map<String, int>.from(data['budgets'] as Map? ?? {});
+    accounts = a;
+    txs = t;
+    goals = g;
+    recurring = r;
+    budgets = b;
+  }
+
+  /// Adds every repeating transaction that has come due since the app last ran.
+  // shortcut: only checked at start, so a tab left open past midnight catches up on its next load;
+  // also run it when the app resumes if that ever matters.
+  void _addDue(DateTime now) {
+    var added = 0;
+    for (final (i, first) in recurring.indexed) {
+      var r = first;
+      while (!r.next.isAfter(now)) {
+        final t = Tx.fromMap(newId(added++), {...r.tx.toMap(), 'date': r.next.millisecondsSinceEpoch});
+        txs.add(t);
+        _applyBalances(t, 1);
+        r = Recurring(id: r.id, tx: r.tx, every: r.every, done: r.done + 1);
+      }
+      recurring[i] = r;
+    }
+    if (added > 0) _changed();
   }
 
   // Same-day entries keep the newest on top: ids are creation timestamps.
@@ -55,6 +85,7 @@ class Store extends ChangeNotifier {
         'txs': {for (final t in txs) t.id: t.toMap()},
         'goals': {for (final g in goals) g.id: g.toMap()},
         'budgets': budgets,
+        'recurring': {for (final r in recurring) r.id: r.toMap()},
       }),
     );
   }
@@ -79,6 +110,7 @@ class Store extends ChangeNotifier {
   void deleteAccount(Account a) {
     accounts.removeWhere((x) => x.id == a.id);
     txs.removeWhere((t) => t.accountId == a.id || t.toAccountId == a.id);
+    recurring.removeWhere((r) => r.tx.accountId == a.id || r.tx.toAccountId == a.id);
     _changed();
   }
 
@@ -98,6 +130,17 @@ class Store extends ChangeNotifier {
     txs.removeWhere((x) => x.id == old.id);
     _applyBalances(old, -1);
     addTx(Tx.fromMap(old.id, t.toMap()));
+  }
+
+  /// Repeats [t], which has just been added as the first occurrence.
+  void addRecurring(Tx t, Repeat every) {
+    recurring.add(Recurring(id: newId(), tx: t, every: every, done: 1));
+    _changed();
+  }
+
+  void deleteRecurring(Recurring r) {
+    recurring.removeWhere((x) => x.id == r.id);
+    _changed();
   }
 
   void saveGoal(Goal g) {
