@@ -187,7 +187,7 @@ class Overview extends StatelessWidget {
             action: TextButton(onPressed: () => tab.value = 1, child: const Text('See all')),
           ),
           if (store.txs.isEmpty)
-            const Empty(Icons.receipt_long_outlined, 'Nothing yet.\nAdd your first transaction with the + button.')
+            const Empty(Icons.receipt_long_outlined, 'Nothing yet.\nAdd your first transaction to get started.')
           else
             Panel(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

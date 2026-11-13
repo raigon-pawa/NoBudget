@@ -19,9 +19,21 @@
   <title>NoBudget</title>
   <link rel="manifest" href="manifest.json">
   <!-- Black while the app loads, so there is no white flash. -->
-  <style>html, body { margin: 0; height: 100%; background: #000; }</style>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; }
+    #loading {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      color: #8a8a8a; font: 700 22px system-ui, sans-serif; letter-spacing: -.5px;
+      animation: pulse 1s ease-in-out infinite alternate;
+    }
+    @keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
+  </style>
 </head>
 <body>
+  <div id="loading">NoBudget</div>
+  <script>
+    addEventListener('flutter-first-frame', () => document.getElementById('loading').remove());
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
