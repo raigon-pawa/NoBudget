@@ -162,14 +162,17 @@ class _TxSheetState extends State<TxSheet> {
             if (widget.tx == null) ...[
               const SizedBox(width: 8),
               PopupMenuButton<Repeat>(
-                tooltip: 'Repeat',
+                tooltip: 'Repeat: ${repeatLabel(repeat)}',
                 onSelected: (r) => setState(() => repeat = r),
                 itemBuilder: (_) => [
                   for (final r in Repeat.values) PopupMenuItem(value: r, child: Text(repeatLabel(r))),
                 ],
-                child: Chip(
-                  avatar: Icon(Icons.repeat, size: 16, color: repeat == Repeat.never ? dim : Colors.white),
-                  label: Text(repeat == Repeat.never ? 'Repeat' : repeatLabel(repeat)),
+                // The tooltip already names this control and its state for screen readers.
+                child: ExcludeSemantics(
+                  child: Chip(
+                    avatar: Icon(Icons.repeat, size: 16, color: repeat == Repeat.never ? dim : Colors.white),
+                    label: Text(repeat == Repeat.never ? 'Repeat' : repeatLabel(repeat)),
+                  ),
                 ),
               ),
             ],

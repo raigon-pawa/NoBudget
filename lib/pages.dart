@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'models.dart';
@@ -33,6 +34,53 @@ Widget _cardPage(BuildContext context, List<Widget> top, List<Widget> cards) {
   );
 }
 
+void _say(BuildContext context, String message) => ScaffoldMessenger.of(context)
+  ..clearSnackBars()
+  ..showSnackBar(SnackBar(width: _snackWidth(context), content: Text(message)));
+
+/// On a wide screen a message is a small box, not a bar across the whole window.
+double? _snackWidth(BuildContext context) => isWide(context) ? 420 : null;
+
+// shortcut: a backup travels through the clipboard, which needs no file-access dependency but tops out
+// around 1 MB on Android (several thousand transactions); save and open a file instead when that gets close.
+Future<void> _backup(BuildContext context) async {
+  await Clipboard.setData(ClipboardData(text: store.export()));
+  if (context.mounted) _say(context, 'Backup copied. Paste it somewhere safe, like a note to yourself.');
+}
+
+Future<void> _restore(BuildContext context) async {
+  final c = TextEditingController();
+  final text = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Restore a backup'),
+      content: SizedBox(
+        width: 440, // long backup text would otherwise stretch the dialog across the screen
+        child: TextField(
+          controller: c,
+          autofocus: true,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Paste the backup text here',
+            helperText: 'This replaces everything in the app now.',
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Restore')),
+      ],
+    ),
+  );
+  if (text == null || !context.mounted) return;
+  try {
+    store.restore(text);
+    _say(context, 'Backup restored.');
+  } catch (_) {
+    _say(context, 'That is not a NoBudget backup. Nothing was changed.');
+  }
+}
+
 // ------------------------------------------------------------------- overview
 
 class Overview extends StatelessWidget {
@@ -55,52 +103,71 @@ class Overview extends StatelessWidget {
 
       return PageColumns(
         top: [
-          Panel(
-            padding: EdgeInsets.zero,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Net worth', style: TextStyle(color: dim)),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: AnimatedMoney(
-                          cash - debt,
-                          style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1),
-                        ),
+          Stack(
+            fit: StackFit.passthrough, // the card keeps the full width
+            children: [
+              Panel(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Net worth', style: TextStyle(color: dim)),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: AnimatedMoney(
+                              cash - debt,
+                              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1),
+                            ),
+                          ),
+                          if (change != 0)
+                            Row(
+                              spacing: 6,
+                              children: [
+                                Icon(
+                                  change >= 0 ? Icons.trending_up : Icons.trending_down,
+                                  size: 18,
+                                  color: change >= 0 ? green : red,
+                                ),
+                                Text(
+                                  '${change >= 0 ? '+' : '-'}${money(change.abs())} in the last 30 days',
+                                  style: const TextStyle(color: dim, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
-                      if (change != 0)
-                        Row(
-                          spacing: 6,
-                          children: [
-                            Icon(
-                              change >= 0 ? Icons.trending_up : Icons.trending_down,
-                              size: 18,
-                              color: change >= 0 ? green : red,
-                            ),
-                            Text(
-                              '${change >= 0 ? '+' : '-'}${money(change.abs())} in the last 30 days',
-                              style: const TextStyle(color: dim, fontSize: 13),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
+                    ),
+                    if (charted)
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 700),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, t, _) =>
+                            CustomPaint(size: const Size(double.infinity, 64), painter: _Spark(trend, t)),
+                      ),
+                  ],
                 ),
-                if (charted)
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 700),
-                    curve: Curves.easeOutCubic,
-                    builder: (_, t, _) => CustomPaint(size: const Size(double.infinity, 64), painter: _Spark(trend, t)),
-                  ),
-              ],
-            ),
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: PopupMenuButton<Future<void> Function(BuildContext)>(
+                  tooltip: 'Backup',
+                  icon: const Icon(Icons.more_horiz, color: dim),
+                  onSelected: (action) => action(context),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: _backup, child: Text('Copy a backup')),
+                    PopupMenuItem(value: _restore, child: Text('Restore a backup')),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Row(
@@ -495,6 +562,7 @@ class _SpendingState extends State<Spending> {
                   ..clearSnackBars()
                   ..showSnackBar(
                     SnackBar(
+                      width: _snackWidth(context),
                       persist: false,
                       content: const Text('Transaction deleted'),
                       action: SnackBarAction(label: 'Undo', onPressed: () => store.addTx(t)),

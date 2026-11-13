@@ -79,4 +79,25 @@ void main() {
     await stopped.open(DateTime(2027));
     expect(stopped.txs.length, 3);
   });
+
+  test('a backup restores into an empty app, and junk is refused', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = Store();
+    await s.open();
+    s.addTx(Tx(type: TxType.income, amount: 5000, accountId: s.accounts.first.id!, date: DateTime(2026, 11, 1)));
+    s.setBudget('Fun', 1000);
+    final backup = s.export();
+
+    SharedPreferences.setMockInitialValues({});
+    final other = Store();
+    await other.open();
+    for (final junk in ['hello', '{}', '{"accounts": {"1": {"name": 5}}, "txs": {}}']) {
+      expect(() => other.restore(junk), throwsA(anything));
+      expect(other.accounts.length, presets.length);
+      expect(other.txs, isEmpty);
+    }
+    other.restore(backup);
+    expect(other.export(), backup);
+    expect(other.accounts.first.balance, 5000);
+  });
 }

@@ -78,16 +78,27 @@ class Store extends ChangeNotifier {
     notifyListeners();
     // shortcut: the whole dataset is rewritten on every change, and a browser caps it near 5 MB (roughly
     // 25,000 transactions); move to a real database when saving gets slow or the cap gets close.
-    _prefs.setString(
-      _key,
-      jsonEncode({
-        'accounts': {for (final a in accounts) a.id: a.toMap()},
-        'txs': {for (final t in txs) t.id: t.toMap()},
-        'goals': {for (final g in goals) g.id: g.toMap()},
-        'budgets': budgets,
-        'recurring': {for (final r in recurring) r.id: r.toMap()},
-      }),
-    );
+    _prefs.setString(_key, export());
+  }
+
+  /// Everything as one piece of text: what is saved on the device, and what a backup is.
+  String export() => jsonEncode({
+    'accounts': {for (final a in accounts) a.id: a.toMap()},
+    'txs': {for (final t in txs) t.id: t.toMap()},
+    'goals': {for (final g in goals) g.id: g.toMap()},
+    'budgets': budgets,
+    'recurring': {for (final r in recurring) r.id: r.toMap()},
+  });
+
+  /// Replaces all data with a backup made by [export]. Throws, changing nothing, if [backup] is not one.
+  void restore(String backup, [DateTime? now]) {
+    if (jsonDecode(backup) case {'accounts': Map _, 'txs': Map _}) {
+      _load(backup);
+      _addDue(now ?? DateTime.now());
+      _changed();
+    } else {
+      throw const FormatException('Not a NoBudget backup');
+    }
   }
 
   Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;

@@ -27,6 +27,11 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Goals**: savings targets with an optional deadline and the weekly amount needed to hit it.
 - **Debts**: buy-now-pay-later, credit and loan accounts with the amount owed, available credit
   and one-tap repayments.
+- **Repeating transactions**: mark rent, pay or a subscription as weekly, fortnightly or monthly and
+  it is added for you when it falls due.
+- **Search**: find any transaction by note, category, account or amount.
+- **Backup**: copy everything as text from the menu on the net worth card, and paste it back to
+  restore, on the same device or another one.
 - **Transactions update balances for you**: paying with a BNPL account raises what you owe, and a
   transfer into a debt account counts as a repayment.
 
