@@ -46,3 +46,15 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Secrets and signing material: never commit these
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+
+# Build outputs and local data
+*.apk
+*.aab
+*.db
