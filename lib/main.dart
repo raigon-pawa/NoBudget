@@ -1,13 +1,29 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'firebase_options.dart';
+import 'login.dart';
 import 'pages.dart';
 import 'sheets.dart';
 import 'store.dart';
 import 'ui.dart';
 
-void main() {
+final _messenger = GlobalKey<ScaffoldMessengerState>();
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  store.open();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Keep a copy on the device, so the app opens and saves offline (Android does by default, a browser does not).
+  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
+  // Against the local Firebase emulators: flutter run --dart-define=EMULATOR=true
+  if (const bool.fromEnvironment('EMULATOR')) {
+    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  }
+  store.onError = (m) => _messenger.currentState?.showSnackBar(SnackBar(content: Text(m)));
+  FirebaseAuth.instance.authStateChanges().listen((user) => user == null ? store.close() : store.openCloud(user.uid));
   runApp(const App());
 }
 
@@ -18,6 +34,7 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'NoBudget',
     debugShowCheckedModeBanner: false,
+    scaffoldMessengerKey: _messenger,
     theme: ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: Colors.black,
@@ -47,7 +64,14 @@ class App extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     ),
-    home: const Shell(),
+    home: StreamBuilder(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, auth) => auth.connectionState == ConnectionState.waiting
+          ? const Scaffold()
+          : auth.data == null
+          ? const LoginPage()
+          : const Shell(),
+    ),
   );
 }
 
@@ -76,7 +100,21 @@ class Shell extends StatelessWidget {
           layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
           child: store.loaded
               ? KeyedSubtree(key: ValueKey(index), child: const [Overview(), Spending(), Goals(), Debts()][index])
-              : const Center(child: CircularProgressIndicator()),
+              : store.error == null
+              ? const Center(child: CircularProgressIndicator())
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 12,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(store.error!, textAlign: TextAlign.center),
+                      ),
+                      TextButton(onPressed: FirebaseAuth.instance.signOut, child: const Text('Sign out')),
+                    ],
+                  ),
+                ),
         ),
       );
       return Scaffold(

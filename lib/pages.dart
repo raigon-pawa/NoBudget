@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +50,11 @@ Future<void> _backup(BuildContext context) async {
 }
 
 Future<void> _currencies(BuildContext context) => showSheet(context, const CurrencySheet());
+
+Future<void> _signOut(BuildContext context) async {
+  final email = FirebaseAuth.instance.currentUser?.email;
+  if (await confirm(context, 'Sign out of $email?', action: 'Sign out')) await FirebaseAuth.instance.signOut();
+}
 
 Future<void> _restore(BuildContext context) async {
   final c = TextEditingController();
@@ -171,6 +177,7 @@ class Overview extends StatelessWidget {
                     PopupMenuItem(value: _currencies, child: Text('Currencies')),
                     PopupMenuItem(value: _backup, child: Text('Copy a backup')),
                     PopupMenuItem(value: _restore, child: Text('Restore a backup')),
+                    PopupMenuItem(value: _signOut, child: Text('Sign out')),
                   ],
                 ),
               ),

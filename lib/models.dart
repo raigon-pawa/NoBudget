@@ -3,7 +3,7 @@ import 'dart:math';
 // All money is integer cents, in the currency of the account it sits in.
 
 /// Currency code -> (country, units per US dollar on 13 Nov 2026). The rates are only starting values:
-/// the app never goes online, so the user corrects them by hand.
+/// the app does not look rates up, so the user corrects them by hand.
 // shortcut: every currency is kept to two decimal places, which is finer than yen or dong need and too
 // coarse for the three-decimal dinars (none listed); store a per-currency scale if one of those is added.
 const currencies = <String, (String, double)>{

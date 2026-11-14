@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,8 +11,8 @@ final store = Store();
 
 const _key = 'data';
 
-/// All data, held in memory and saved on this device as one JSON document
-/// (app storage on Android, localStorage in a browser).
+/// All data, held in memory and saved as one JSON document: in the signed-in user's Firestore document
+/// ([openCloud]), or on this device ([open], which the tests use).
 class Store extends ChangeNotifier {
   List<Account> accounts = [];
   List<Tx> txs = []; // newest first
@@ -21,18 +23,72 @@ class Store extends ChangeNotifier {
   Map<String, double> rates = {}; // units per US dollar, only for currencies whose rate the user changed
   bool loaded = false;
 
+  String? error; // why the data could not be opened
+  void Function(String message)? onError; // a save that failed
+
   late SharedPreferences _prefs;
+  DocumentReference<Map<String, dynamic>>? _doc;
+  StreamSubscription<Object?>? _sub;
 
   Future<void> open([DateTime? now]) async {
     _prefs = await SharedPreferences.getInstance();
-    final raw = _prefs.getString(_key);
+    _start(_prefs.getString(_key), now ?? DateTime.now());
+  }
+
+  /// Opens the data of the signed-in user [uid] and follows changes made on their other devices.
+  // shortcut: everything is one document, which Firestore caps at 1 MiB (around 5,000 transactions), and when
+  // two devices save in the same moment the later save wins whole; split it by month when either starts to bite.
+  Future<void> openCloud(String uid) async {
+    if (_doc?.id == uid) return;
+    _prefs = await SharedPreferences.getInstance();
+    final doc = _doc = FirebaseFirestore.instance.doc('users/$uid');
+    _sub = doc.snapshots().listen(
+      (snap) {
+        final raw = snap.data()?['data'] as String?;
+        if (raw == null) {
+          // "Not there" from the offline cache says nothing: wait for the server, or a new device would
+          // overwrite the account with a fresh start.
+          if (snap.metadata.isFromCache) return;
+          // A new account starts from what this device held before sign-in, if anything.
+          _start(_prefs.getString(_key), DateTime.now());
+          _prefs.remove(_key);
+          _changed();
+        } else if (!loaded || (!snap.metadata.hasPendingWrites && raw != export())) {
+          // Not our own save coming back: the first load, or a change from another device.
+          _start(raw, DateTime.now());
+        }
+      },
+      onError: (Object e) {
+        error = 'Could not open your data: $e';
+        notifyListeners();
+      },
+    );
+  }
+
+  /// Forgets everything in memory when the user signs out. Their data stays in the cloud.
+  void close() {
+    _sub?.cancel();
+    _doc = null;
+    accounts = [];
+    txs = [];
+    goals = [];
+    budgets = {};
+    recurring = [];
+    home = 'AUD';
+    rates = {};
+    loaded = false;
+    error = null;
+    notifyListeners();
+  }
+
+  void _start(String? raw, DateTime now) {
     if (raw == null) {
       accounts = [for (final (i, a) in presets.indexed) Account.fromMap(newId(i), a.toMap())];
     } else {
       _load(raw);
     }
     _sort();
-    _addDue(now ?? DateTime.now());
+    _addDue(now);
     loaded = true;
     notifyListeners();
   }
@@ -85,9 +141,13 @@ class Store extends ChangeNotifier {
   void _changed() {
     _sort();
     notifyListeners();
-    // shortcut: the whole dataset is rewritten on every change, and a browser caps it near 5 MB (roughly
-    // 25,000 transactions); move to a real database when saving gets slow or the cap gets close.
-    _prefs.setString(_key, export());
+    final doc = _doc;
+    if (doc == null) {
+      _prefs.setString(_key, export());
+    } else {
+      // Offline, this waits and is sent once the connection is back. A refused save is undone by Firestore.
+      doc.set({'data': export()}).catchError((Object e) => onError?.call('Could not save: $e'));
+    }
   }
 
   /// Everything as one piece of text: what is saved on the device, and what a backup is.

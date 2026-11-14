@@ -1,8 +1,8 @@
 # NoBudget
 
-A personal budgeting app for Android and the web, built with Flutter. Everything is entered by hand
-and stored on your own device (or in your browser). There are no bank connections, no accounts and
-nothing is sent anywhere.
+A personal budgeting app for Android and the web, built with Flutter. Everything is entered by hand:
+there are no bank connections. You sign in with an email and password, and your budget is kept in
+your own private space in the cloud (Firebase), so it is backed up and the same on every device.
 
 **Try it in a browser: <https://raigon-pawa.github.io/NoBudget/>**
 
@@ -36,8 +36,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
   restore, on the same device or another one.
 - **Currencies**: each account has a country and currency (32 to pick from). Totals are shown in
   your home currency, and a transfer between two currencies records both what left and what
-  arrived. Exchange rates start from built-in values and are corrected by hand, because the app
-  never goes online.
+  arrived. Exchange rates start from built-in values and are corrected by hand; the app does not
+  look them up.
 - **Transactions update balances for you**: paying with a BNPL account raises what you owe, and a
   transfer into a debt account counts as a repayment.
 
@@ -51,6 +51,18 @@ NoBudget is not affiliated with any of the banks or lenders named above.
 
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install), plus an Android device or
 emulator for the app, or Chrome for the website.
+
+You also need a Firebase project of your own (the free Spark plan is enough) with Email/Password
+sign-in switched on and a Firestore database created. Connect the code to it once:
+
+```sh
+firebase login
+dart pub global activate flutterfire_cli
+flutterfire configure --platforms=android,web          # writes lib/firebase_options.dart, which is not in this repo
+firebase deploy --only firestore:rules --project <your-project-id>
+```
+
+Then:
 
 ```sh
 flutter pub get
@@ -76,17 +88,26 @@ cd /tmp/nobudget-site && touch .nojekyll && git init -b gh-pages && git add -A &
 git push -f https://github.com/raigon-pawa/NoBudget.git gh-pages
 ```
 
-Data stays where it was entered: the Android app and each browser keep their own copy, and clearing
-a browser's site data removes it. Sign-in and cloud sync are in progress on the
-[`firebase`](../../tree/firebase) branch.
+Each account's data is one Firestore document that only that account can read or write
+([`firestore.rules`](firestore.rules)). The app keeps a copy on the device, so it opens and saves
+offline and catches up when the connection returns. Anything entered on a device before sign-in
+existed moves into the first account created there. One document holds about 5,000 transactions.
+
+To try changes without touching real data, run the Firebase emulators and point the app at them:
+
+```sh
+firebase emulators:start --only auth,firestore --project demo-nobudget
+flutter run -d chrome --dart-define=EMULATOR=true
+```
 
 ## Code layout
 
 | File | What it holds |
 |---|---|
 | `lib/models.dart` | Accounts, transactions, goals, currencies and the money maths |
-| `lib/store.dart` | The in-memory state the UI listens to, saved on the device as one JSON document |
-| `lib/main.dart` | Theme and the shell: bottom bar on a phone, side rail on a wide screen |
+| `lib/store.dart` | The in-memory state the UI listens to, saved as one JSON document in the user's Firestore document |
+| `lib/login.dart` | Sign in, create an account, reset a password |
+| `lib/main.dart` | Firebase start-up, the sign-in gate, theme and the shell: bottom bar on a phone, side rail on a wide screen |
 | `lib/pages.dart` | The four tabs |
 | `lib/sheets.dart` | Forms for transactions, accounts and goals |
 | `lib/ui.dart` | Shared widgets, categories and formatting |
