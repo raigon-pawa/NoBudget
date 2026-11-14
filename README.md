@@ -34,7 +34,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Search**: find any transaction by note, category, account or amount.
 - **Backup**: copy everything as text from the menu on the net worth card, and paste it back to
   restore, on the same device or another one.
-- **Currencies**: each account has a country and currency (32 to pick from). Totals are shown in
+- **Currencies**: each account has a country and currency (32 to pick from), and adding an account
+  suggests well-known banks, wallets and pay-later providers for the country you pick. Totals are shown in
   your home currency, and a transfer between two currencies records both what left and what
   arrived. Exchange rates start from built-in values and are corrected by hand; the app does not
   look them up.
@@ -45,7 +46,7 @@ The app starts with a set of Australian accounts (CommBank, ANZ Plus, Wise, Revo
 Klarna, Afterpay) that you can rename or delete, with Australia as the home country. Both can be
 changed: the home country is under "Currencies" in the menu on the net worth card.
 
-NoBudget is not affiliated with any of the banks or lenders named above.
+NoBudget is not affiliated with any of the banks or lenders named above or suggested in the app.
 
 ## Build
 

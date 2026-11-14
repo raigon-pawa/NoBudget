@@ -259,6 +259,7 @@ class _AccountSheetState extends State<AccountSheet> {
   @override
   Widget build(BuildContext context) {
     final a = widget.account;
+    final known = presetsFor(currency).where((p) => p.isDebt == widget.debt);
     final bal = balance.text.trim().isEmpty ? 0 : parseCents(balance.text);
     final lim = limit.text.trim().isEmpty ? 0 : parseCents(limit.text);
     final ok = name.text.trim().isNotEmpty && bal != null && lim != null && lim >= 0;
@@ -285,12 +286,15 @@ class _AccountSheetState extends State<AccountSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _title(context, a == null ? 'New account' : 'Edit ${a.name}'),
-        if (a == null) ...[
+        _currencyPicker('Country and currency', currency, (c) => setState(() => currency = c)),
+        _gap,
+        // Suggestions follow the country picked above.
+        if (a == null && known.isNotEmpty) ...[
           Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
-              for (final p in presets.where((p) => p.isDebt == widget.debt))
+              for (final p in known)
                 ActionChip(
                   avatar: CircleAvatar(backgroundColor: Color(p.color)),
                   label: Text(p.name),
@@ -321,8 +325,6 @@ class _AccountSheetState extends State<AccountSheet> {
           selected: {type},
           onSelectionChanged: (s) => setState(() => type = s.first),
         ),
-        _gap,
-        _currencyPicker('Country and currency', currency, (c) => setState(() => currency = c)),
         _gap,
         AmountField(
           balance,

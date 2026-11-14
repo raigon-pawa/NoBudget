@@ -88,6 +88,20 @@ void main() {
     expect(trend, [650, 1150, 1000]);
   });
 
+  test('every country has banks to suggest', () {
+    expect(knownBanks.keys.toSet().difference(currencies.keys.toSet()), isEmpty);
+    for (final c in currencies.keys) {
+      final banks = presetsFor(c).where((a) => !a.isDebt);
+      expect(banks.length, greaterThanOrEqualTo(4), reason: c);
+      expect(presetsFor(c).map((a) => a.name).toSet().length, presetsFor(c).length, reason: '$c repeats a name');
+    }
+    expect(presetsFor('AUD'), presets);
+    final us = presetsFor('USD');
+    expect(us.first.name, 'Chase');
+    expect(us.first.currency, 'USD');
+    expect(us.last.type, AccountType.credit);
+  });
+
   test('repeat dates', () {
     final d = DateTime(2026, 1, 31);
     expect(occurrence(d, Repeat.weekly, 2), DateTime(2026, 2, 14));

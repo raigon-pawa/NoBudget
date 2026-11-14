@@ -101,6 +101,66 @@ const presets = [
   Account(name: 'Afterpay', type: AccountType.credit, color: 0xFFB2FCE4),
 ];
 
+/// Well-known banks and wallets, then buy-now-pay-later and credit providers, by currency. Australia's are
+/// [presets], which a new user also starts with.
+const knownBanks = <String, (List<String>, List<String>)>{
+  'BDT': (['BRAC Bank', 'Dutch-Bangla Bank', 'Sonali Bank', 'City Bank', 'Islami Bank', 'bKash', 'Nagad'], []),
+  'BRL': (['Itaú', 'Bradesco', 'Banco do Brasil', 'Caixa', 'Santander', 'Nubank'], []),
+  'CAD': (['RBC', 'TD', 'Scotiabank', 'BMO', 'CIBC', 'Wealthsimple'], ['Affirm', 'Klarna', 'Afterpay']),
+  'CNY': (
+    ['ICBC', 'Bank of China', 'China Construction Bank', 'Agricultural Bank', 'Alipay', 'WeChat Pay'],
+    ['Huabei'],
+  ),
+  'DKK': (['Danske Bank', 'Nordea', 'Jyske Bank', 'Nykredit', 'Lunar'], ['Klarna']),
+  'EUR': (['ING', 'BNP Paribas', 'Deutsche Bank', 'Santander', 'N26', 'bunq', 'Revolut', 'Wise'], ['Klarna']),
+  'FJD': (['ANZ', 'Westpac', 'BSP', 'HFC Bank', 'Bred Bank'], []),
+  'HKD': (['HSBC', 'Hang Seng Bank', 'Bank of China (Hong Kong)', 'Standard Chartered', 'ZA Bank', 'Mox'], ['Atome']),
+  'INR': (['SBI', 'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Kotak', 'Paytm'], ['Simpl', 'LazyPay']),
+  'IDR': (['BCA', 'Bank Mandiri', 'BRI', 'BNI', 'Jago', 'GoPay', 'OVO'], ['Kredivo', 'Akulaku']),
+  'JPY': (['MUFG', 'SMBC', 'Mizuho', 'Japan Post Bank', 'Rakuten Bank', 'PayPay'], ['Paidy']),
+  'MYR': (['Maybank', 'CIMB', 'Public Bank', 'RHB', 'Hong Leong Bank', "Touch 'n Go"], ['Atome']),
+  'MXN': (['BBVA', 'Banorte', 'Santander', 'Citibanamex', 'HSBC', 'Nu'], ['Kueski', 'Aplazo']),
+  'NPR': (['Nabil Bank', 'NIC Asia', 'Global IME Bank', 'Nepal Investment Mega Bank', 'eSewa', 'Khalti'], []),
+  'NZD': (['ANZ', 'ASB', 'BNZ', 'Westpac', 'Kiwibank'], ['Afterpay', 'Zip', 'Klarna']),
+  'NOK': (['DNB', 'Nordea', 'SpareBank 1', 'Danske Bank'], ['Klarna']),
+  'PKR': (['HBL', 'UBL', 'MCB Bank', 'Meezan Bank', 'Allied Bank', 'JazzCash', 'Easypaisa'], []),
+  'PHP': (['BDO', 'BPI', 'Metrobank', 'Landbank', 'UnionBank', 'GCash', 'Maya'], ['BillEase']),
+  'SAR': (['Al Rajhi Bank', 'SNB', 'Riyad Bank', 'SAB', 'Alinma Bank', 'STC Pay'], ['Tabby', 'Tamara']),
+  'SGD': (['DBS', 'OCBC', 'UOB', 'Standard Chartered', 'Trust Bank', 'GXS'], ['Atome']),
+  'ZAR': (
+    ['Standard Bank', 'FNB', 'Absa', 'Nedbank', 'Capitec', 'TymeBank', 'Discovery Bank'],
+    ['Payflex', 'PayJustNow'],
+  ),
+  'KRW': (['KB Kookmin', 'Shinhan', 'Woori', 'Hana', 'NH NongHyup', 'KakaoBank', 'Toss Bank'], []),
+  'LKR': (['Bank of Ceylon', "People's Bank", 'Commercial Bank', 'HNB', 'Sampath Bank'], ['Koko']),
+  'SEK': (['Swedbank', 'SEB', 'Handelsbanken', 'Nordea'], ['Klarna']),
+  'CHF': (['UBS', 'Raiffeisen', 'PostFinance', 'ZKB', 'Neon', 'Yuh'], ['Klarna']),
+  'THB': (['Bangkok Bank', 'Kasikornbank', 'SCB', 'Krungthai', 'Krungsri', 'TrueMoney'], []),
+  'TRY': (['Ziraat Bank', 'Isbank', 'Garanti BBVA', 'Akbank', 'Yapi Kredi', 'Papara'], []),
+  'AED': (['Emirates NBD', 'ADCB', 'FAB', 'Mashreq', 'Dubai Islamic Bank', 'Wio'], ['Tabby', 'Tamara']),
+  'GBP': (['Barclays', 'HSBC', 'Lloyds', 'NatWest', 'Monzo', 'Starling', 'Revolut', 'Wise'], ['Klarna', 'Clearpay']),
+  'USD': (
+    ['Chase', 'Bank of America', 'Wells Fargo', 'Citi', 'Capital One', 'Chime', 'Wise'],
+    ['Affirm', 'Klarna', 'Afterpay'],
+  ),
+  'VND': (['Vietcombank', 'VietinBank', 'BIDV', 'Techcombank', 'MB Bank', 'MoMo'], []),
+};
+
+/// The accounts to suggest when adding one in [currency].
+List<Account> presetsFor(String currency) {
+  if (currency == 'AUD') return presets;
+  final (banks, lenders) = knownBanks[currency] ?? (const <String>[], const <String>[]);
+  return [
+    for (final (i, name) in [...banks, ...lenders].indexed)
+      Account(
+        name: name,
+        type: i < banks.length ? AccountType.bank : AccountType.credit,
+        color: presets[i % presets.length].color, // no brand colours: the same few tints go round
+        currency: currency,
+      ),
+  ];
+}
+
 class Tx {
   const Tx({
     this.id,
