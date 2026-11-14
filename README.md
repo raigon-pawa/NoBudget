@@ -4,7 +4,7 @@ A personal budgeting app for Android and the web, built with Flutter. Everything
 there are no bank connections. You sign in with Google or with an email and password, and your budget is kept in
 your own private space in the cloud (Firebase), so it is backed up and the same on every device.
 
-**Try it in a browser: <https://raigon-pawa.github.io/NoBudget/>**
+**Try it in a browser: <https://nobudget.raigonpawa.dev/>**
 
 **Android:** download the APK from the [latest release](../../releases/latest).
 
@@ -90,12 +90,13 @@ The Android release build is signed with the debug key, so it is for sideloading
 build is a folder of static files; to try it locally, run `python3 -m http.server` inside
 `build/web`. If it will be served from a sub-path, add `--base-href /that-path/` to the build.
 
-The live site is the `gh-pages` branch, served by GitHub Pages. It does not update by itself; to
+The live site is the `gh-pages` branch, served by GitHub Pages at nobudget.raigonpawa.dev (the
+`CNAME` file names the domain). It does not update by itself; to
 publish the current code:
 
 ```sh
-flutter build web --release --no-web-resources-cdn --base-href /NoBudget/ -o /tmp/nobudget-site
-cd /tmp/nobudget-site && touch .nojekyll && git init -b gh-pages && git add -A && git commit -m "Website build"
+flutter build web --release --no-web-resources-cdn -o /tmp/nobudget-site
+cd /tmp/nobudget-site && touch .nojekyll && echo nobudget.raigonpawa.dev > CNAME && git init -b gh-pages && git add -A && git commit -m "Website build"
 git push -f https://github.com/raigon-pawa/NoBudget.git gh-pages
 ```
 
