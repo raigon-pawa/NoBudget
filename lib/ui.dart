@@ -15,8 +15,25 @@ const dim = Color(0xFF8A8A8A);
 const green = Color(0xFF8FD0A0);
 const red = Color(0xFFE08080);
 
-final _aud = NumberFormat.currency(locale: 'en_AU', symbol: '\$');
-String money(int cents) => _aud.format(cents / 100);
+/// "$" and the like for the home currency. Any other goes by its code, so two kinds of dollar never look
+/// alike, and so does a home currency whose sign is unfamiliar or missing from the app's font.
+String symbol(String currency) {
+  final s = NumberFormat.simpleCurrency(name: currency).currencySymbol;
+  return currency == store.home && const {'\$', '€', '£', '¥', '₹'}.contains(s) ? s : currency;
+}
+
+/// "$12.00" in the home currency, "12.00 USD" in any other.
+String money(int cents, [String? currency]) {
+  currency ??= store.home;
+  final digits = NumberFormat.simpleCurrency(name: currency).decimalDigits;
+  final sign = symbol(currency);
+  return sign != currency
+      ? NumberFormat.currency(locale: 'en_AU', symbol: sign, decimalDigits: digits).format(cents / 100)
+      : '${NumberFormat.decimalPatternDigits(locale: 'en_AU', decimalDigits: digits).format(cents / 100)} $currency';
+}
+
+String currencyLabel(String currency) => '${currencies[currency]!.$1} · $currency';
+
 String centsText(int cents) => cents == 0 ? '' : (cents / 100).toStringAsFixed(2);
 
 const categories = <String, (IconData, Color)>{
@@ -240,7 +257,8 @@ class TxTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final from = store.account(t.accountId)?.name ?? '?';
+    final account = store.account(t.accountId), to = store.account(t.toAccountId);
+    final from = account?.name ?? '?';
     final (icon, color, title, sign) = switch (t.type) {
       TxType.expense => (cat(t.category).$1, cat(t.category).$2, t.category, '-'),
       TxType.income => (Icons.south_west, green, 'Income', '+'),
@@ -252,12 +270,25 @@ class TxTile extends StatelessWidget {
       title: Text(t.note.isEmpty ? title : t.note, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         detail ??
-            '${t.type == TxType.transfer ? '$from → ${store.account(t.toAccountId)?.name ?? '?'}' : from}'
+            '${t.type == TxType.transfer ? '$from to ${to?.name ?? '?'}' : from}'
                 '${showDate ? ' · ${DateFormat('d MMM').format(t.date)}' : ''}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: dim),
       ),
-      trailing: Text(
-        '$sign${money(t.amount)}',
+      trailing: Text.rich(
+        TextSpan(
+          text: '$sign${money(t.amount, account?.currency)}',
+          children: [
+            // Between currencies: what arrived at the other end.
+            if (t.toAmount != null)
+              TextSpan(
+                text: '\n${money(t.toAmount!, to?.currency)}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: dim),
+              ),
+          ],
+        ),
+        textAlign: TextAlign.end,
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.type == TxType.income ? green : null),
       ),
       onTap: onTap ?? () => showSheet(context, TxSheet(tx: t)),
@@ -298,10 +329,12 @@ class AmountField extends StatelessWidget {
     this.onSubmitted,
     this.autofocus = false,
     this.hint,
+    this.currency,
   });
   final TextEditingController controller;
   final String label;
   final String? hint;
+  final String? currency; // the home currency when left out
   final ValueChanged<String>? onChanged, onSubmitted;
   final bool autofocus;
 
@@ -312,11 +345,16 @@ class AmountField extends StatelessWidget {
     onChanged: onChanged,
     onSubmitted: onSubmitted,
     keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-    decoration: InputDecoration(labelText: label, prefixText: '\$ ', helperText: hint, helperMaxLines: 2),
+    decoration: InputDecoration(
+      labelText: label,
+      prefixText: '${symbol(currency ?? store.home)} ',
+      helperText: hint,
+      helperMaxLines: 2,
+    ),
   );
 }
 
-/// Asks for a dollar amount. Null when cancelled, 0 when left empty.
+/// Asks for an amount in the home currency. Null when cancelled, 0 when left empty.
 Future<int?> askAmount(BuildContext context, String title, {int initial = 0, String? hint}) {
   final c = TextEditingController(text: centsText(initial));
   return showDialog<int>(

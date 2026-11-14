@@ -100,4 +100,43 @@ void main() {
     expect(other.export(), backup);
     expect(other.accounts.first.balance, 5000);
   });
+
+  test('other currencies: transfers between them, totals in the home currency, rates', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = Store();
+    await s.open();
+    final aud = s.accounts.first.id!;
+    s.saveAccount(const Account(name: 'Wise USD', type: AccountType.bank, color: 0, currency: 'USD'));
+    final usd = s.accounts.last.id!;
+    final day = DateTime(2026, 11, 1);
+    s.addTx(Tx(type: TxType.income, amount: 100000, accountId: aud, date: day));
+    // $300 leaves in AUD, 200 arrives in USD.
+    s.addTx(Tx(type: TxType.transfer, amount: 30000, accountId: aud, toAccountId: usd, toAmount: 20000, date: day));
+    s.addTx(Tx(type: TxType.expense, amount: 5000, accountId: usd, category: 'Fun', date: day));
+    expect(s.account(aud)!.balance, 70000);
+    expect(s.account(usd)!.balance, 15000);
+
+    s.setRate('USD', 1.5); // 1 USD = 1.50 AUD
+    expect(s.convert(10000, 'USD'), 15000);
+    expect(s.convert(15000, 'AUD', 'USD'), 10000);
+    expect(s.homeAccounts.cash, 70000 + 22500);
+    expect(spendByCategory(s.inHome(s.txs)), {'Fun': 7500});
+
+    // Undoing the transfer puts each side back in its own currency.
+    s.deleteTx(s.txs.firstWhere((t) => t.type == TxType.transfer));
+    expect(s.account(aud)!.balance, 100000);
+    expect(s.account(usd)!.balance, -5000);
+
+    s.setHome('USD');
+    final again = Store();
+    await again.open();
+    expect(again.home, 'USD');
+    expect(again.account(usd)!.currency, 'USD');
+    expect(again.homeAccounts.cash, 66667 - 5000); // the changed rate was saved too
+
+    final backup = again.export();
+    expect(() => again.restore(backup.replaceFirst('"currency":"USD"', '"currency":"XXX"')), throwsFormatException);
+    expect(() => again.restore(backup.replaceFirst('"home":"USD"', '"home":"XXX"')), throwsFormatException);
+    expect(again.export(), backup);
+  });
 }

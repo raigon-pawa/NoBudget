@@ -1,6 +1,45 @@
 import 'dart:math';
 
-// All money is integer cents (AUD).
+// All money is integer cents, in the currency of the account it sits in.
+
+/// Currency code -> (country, units per US dollar on 13 Nov 2026). The rates are only starting values:
+/// the app never goes online, so the user corrects them by hand.
+// shortcut: every currency is kept to two decimal places, which is finer than yen or dong need and too
+// coarse for the three-decimal dinars (none listed); store a per-currency scale if one of those is added.
+const currencies = <String, (String, double)>{
+  'AUD': ('Australia', 1.4683),
+  'BDT': ('Bangladesh', 124.77),
+  'BRL': ('Brazil', 5.6102),
+  'CAD': ('Canada', 1.4256),
+  'CNY': ('China', 6.6851),
+  'DKK': ('Denmark', 6.7476),
+  'EUR': ('Eurozone', 0.90349),
+  'FJD': ('Fiji', 2.2634),
+  'HKD': ('Hong Kong', 7.8450),
+  'INR': ('India', 94.086),
+  'IDR': ('Indonesia', 18251),
+  'JPY': ('Japan', 159.80),
+  'MYR': ('Malaysia', 4.0788),
+  'MXN': ('Mexico', 18.620),
+  'NPR': ('Nepal', 150.54),
+  'NZD': ('New Zealand', 1.8027),
+  'NOK': ('Norway', 9.5607),
+  'PKR': ('Pakistan', 276.62),
+  'PHP': ('Philippines', 63.786),
+  'SAR': ('Saudi Arabia', 3.75),
+  'SGD': ('Singapore', 1.2863),
+  'ZAR': ('South Africa', 16.736),
+  'KRW': ('South Korea', 1334.2),
+  'LKR': ('Sri Lanka', 332.43),
+  'SEK': ('Sweden', 10.018),
+  'CHF': ('Switzerland', 0.83437),
+  'THB': ('Thailand', 33.855),
+  'TRY': ('Turkey', 50.312),
+  'AED': ('United Arab Emirates', 3.6725),
+  'GBP': ('United Kingdom', 0.75515),
+  'USD': ('United States', 1),
+  'VND': ('Vietnam', 25691),
+};
 
 /// Document id that sorts by creation time, so lists keep the order things were added in.
 String newId([int offset = 0]) => '${DateTime.now().microsecondsSinceEpoch + offset}';
@@ -19,6 +58,7 @@ class Account {
     this.balance = 0,
     this.limit = 0,
     required this.color,
+    this.currency = 'AUD',
   });
 
   final String? id;
@@ -27,6 +67,7 @@ class Account {
   final int balance; // bank: money held. credit/loan: amount owed.
   final int limit; // credit: credit limit. loan: original amount. bank: unused.
   final int color;
+  final String currency; // a key of [currencies]
 
   bool get isDebt => type != AccountType.bank;
   int get available => type == AccountType.credit ? max(0, limit - balance) : 0;
@@ -36,9 +77,17 @@ class Account {
       type = AccountType.values.byName(m['type'] as String),
       balance = m['balance'] as int,
       limit = m['limit'] as int,
-      color = m['color'] as int;
+      color = m['color'] as int,
+      currency = m['currency'] as String? ?? 'AUD'; // accounts saved before currencies existed
 
-  Map<String, Object?> toMap() => {'name': name, 'type': type.name, 'balance': balance, 'limit': limit, 'color': color};
+  Map<String, Object?> toMap() => {
+    'name': name,
+    'type': type.name,
+    'balance': balance,
+    'limit': limit,
+    'color': color,
+    'currency': currency,
+  };
 }
 
 const presets = [
@@ -59,6 +108,7 @@ class Tx {
     required this.amount,
     required this.accountId,
     this.toAccountId,
+    this.toAmount,
     this.category = '',
     this.note = '',
     required this.date,
@@ -66,9 +116,10 @@ class Tx {
 
   final String? id;
   final TxType type;
-  final int amount; // always positive
+  final int amount; // always positive, in the currency of [accountId]
   final String accountId;
   final String? toAccountId; // transfers only
+  final int? toAmount; // transfers between currencies only: what arrived, in the receiving account's currency
   final String category; // expenses only
   final String note;
   final DateTime date;
@@ -78,6 +129,7 @@ class Tx {
       amount = m['amount'] as int,
       accountId = m['accountId'] as String,
       toAccountId = m['toAccountId'] as String?,
+      toAmount = m['toAmount'] as int?,
       category = m['category'] as String,
       note = m['note'] as String,
       date = DateTime.fromMillisecondsSinceEpoch(m['date'] as int);
@@ -87,6 +139,7 @@ class Tx {
     'amount': amount,
     'accountId': accountId,
     'toAccountId': toAccountId,
+    'toAmount': toAmount,
     'category': category,
     'note': note,
     'date': date.millisecondsSinceEpoch,
@@ -161,11 +214,11 @@ extension Totals on Iterable<Account> {
 /// Balance change per account id for [t]. Debt balances mean "amount owed",
 /// so money leaving a debt account raises its balance and money entering lowers it.
 Map<String, int> balanceDeltas(Tx t, Map<String, Account> accounts) {
-  int out(Account a) => a.isDebt ? t.amount : -t.amount;
+  int out(Account a, int amount) => a.isDebt ? amount : -amount;
   final from = accounts[t.accountId], to = accounts[t.toAccountId];
   return {
-    if (from != null) from.id!: t.type == TxType.income ? -out(from) : out(from),
-    if (t.type == TxType.transfer && to != null) to.id!: -out(to),
+    if (from != null) from.id!: t.type == TxType.income ? -out(from, t.amount) : out(from, t.amount),
+    if (t.type == TxType.transfer && to != null) to.id!: -out(to, t.toAmount ?? t.amount),
   };
 }
 

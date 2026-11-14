@@ -34,11 +34,16 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Search**: find any transaction by note, category, account or amount.
 - **Backup**: copy everything as text from the menu on the net worth card, and paste it back to
   restore, on the same device or another one.
+- **Currencies**: each account has a country and currency (32 to pick from). Totals are shown in
+  your home currency, and a transfer between two currencies records both what left and what
+  arrived. Exchange rates start from built-in values and are corrected by hand, because the app
+  never goes online.
 - **Transactions update balances for you**: paying with a BNPL account raises what you owe, and a
   transfer into a debt account counts as a repayment.
 
 The app starts with a set of Australian accounts (CommBank, ANZ Plus, Wise, Revolut, Up, Latitude,
-Klarna, Afterpay) that you can rename or delete. All amounts are in AUD.
+Klarna, Afterpay) that you can rename or delete, with Australia as the home country. Both can be
+changed: the home country is under "Currencies" in the menu on the net worth card.
 
 NoBudget is not affiliated with any of the banks or lenders named above.
 
@@ -79,14 +84,14 @@ a browser's site data removes it. Sign-in and cloud sync are in progress on the
 
 | File | What it holds |
 |---|---|
-| `lib/models.dart` | Accounts, transactions, goals and the money maths |
+| `lib/models.dart` | Accounts, transactions, goals, currencies and the money maths |
 | `lib/store.dart` | The in-memory state the UI listens to, saved on the device as one JSON document |
 | `lib/main.dart` | Theme and the shell: bottom bar on a phone, side rail on a wide screen |
 | `lib/pages.dart` | The four tabs |
 | `lib/sheets.dart` | Forms for transactions, accounts and goals |
 | `lib/ui.dart` | Shared widgets, categories and formatting |
 
-Money is stored as integer cents.
+Money is stored as integer cents, in the currency of the account it belongs to.
 
 ## Licence
 

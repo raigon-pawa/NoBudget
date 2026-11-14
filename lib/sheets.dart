@@ -48,6 +48,18 @@ Widget _dateChip(BuildContext context, DateTime? date, String empty, DateTime fi
       },
     );
 
+Widget _currencyPicker(String label, String value, ValueChanged<String> onPick, {String? hint}) =>
+    DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      menuMaxHeight: 420,
+      dropdownColor: const Color(0xFF1E1E1E), // the default is the page's black, which hides the menu's edge
+      borderRadius: BorderRadius.circular(14),
+      decoration: InputDecoration(labelText: label, helperText: hint, helperMaxLines: 2),
+      items: [for (final c in currencies.keys) DropdownMenuItem(value: c, child: Text(currencyLabel(c)))],
+      onChanged: (c) => onPick(c!),
+    );
+
 // ---------------------------------------------------------------- transaction
 
 class TxSheet extends StatefulWidget {
@@ -63,6 +75,8 @@ class TxSheet extends StatefulWidget {
 class _TxSheetState extends State<TxSheet> {
   late var type = widget.tx?.type ?? widget.type;
   late final amount = TextEditingController(text: centsText(widget.tx?.amount ?? 0));
+  late final received = TextEditingController(text: centsText(widget.tx?.toAmount ?? 0));
+  late var typedReceived = widget.tx?.toAmount != null; // otherwise it follows the amount at the saved rate
   late final note = TextEditingController(text: widget.tx?.note);
   late String? to = widget.tx?.toAccountId ?? widget.toAccountId;
   // New entries start on the last used account; repayments start from a bank account.
@@ -74,11 +88,26 @@ class _TxSheetState extends State<TxSheet> {
   late var date = widget.tx?.date ?? DateTime.now();
   var repeat = Repeat.never;
 
+  /// Applies [change], then works out again what a transfer between currencies delivers.
+  void _update(VoidCallback change) => setState(() {
+    change();
+    final a = store.account(from), b = store.account(to);
+    if (typedReceived || a == null || b == null) return;
+    received.text = centsText(store.convert(parseCents(amount.text) ?? 0, a.currency, b.currency));
+  });
+
   @override
   Widget build(BuildContext context) {
-    final cents = parseCents(amount.text);
+    final cents = parseCents(amount.text), got = parseCents(received.text);
     final transfer = type == TxType.transfer;
-    final ok = cents != null && cents > 0 && from != null && (!transfer || (to != null && to != from));
+    final fromCurrency = store.account(from)?.currency, toCurrency = store.account(to)?.currency;
+    final cross = transfer && fromCurrency != null && toCurrency != null && fromCurrency != toCurrency;
+    final ok =
+        cents != null &&
+        cents > 0 &&
+        from != null &&
+        (!transfer || (to != null && to != from)) &&
+        (!cross || (got != null && got > 0));
 
     final save = !ok
         ? null
@@ -89,6 +118,7 @@ class _TxSheetState extends State<TxSheet> {
               amount: cents,
               accountId: from!,
               toAccountId: transfer ? to : null,
+              toAmount: cross ? got : null,
               category: type == TxType.expense ? category : '',
               note: note.text.trim(),
               date: date,
@@ -116,8 +146,9 @@ class _TxSheetState extends State<TxSheet> {
         AmountField(
           amount,
           'Amount',
+          currency: fromCurrency,
           autofocus: widget.tx == null,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => _update(() {}),
           onSubmitted: (_) => save?.call(),
         ),
         _label(switch (type) {
@@ -125,10 +156,21 @@ class _TxSheetState extends State<TxSheet> {
           TxType.income => 'Into',
           TxType.transfer => 'From',
         }),
-        _accountChips(store.accounts.where((a) => a.type != AccountType.loan), from, (id) => setState(() => from = id)),
+        _accountChips(store.accounts.where((a) => a.type != AccountType.loan), from, (id) => _update(() => from = id)),
         if (transfer) ...[
           _label('To (pick a debt to record a repayment)'),
-          _accountChips(store.accounts.where((a) => a.id != from), to, (id) => setState(() => to = id)),
+          _accountChips(store.accounts.where((a) => a.id != from), to, (id) => _update(() => to = id)),
+          if (cross) ...[
+            _gap,
+            AmountField(
+              received,
+              'Arrives as',
+              currency: toCurrency,
+              hint: 'Worked out from your saved rate. Change it to what actually arrived.',
+              onChanged: (_) => setState(() => typedReceived = true),
+              onSubmitted: (_) => save?.call(),
+            ),
+          ],
         ],
         if (type == TxType.expense) ...[
           _label('Category'),
@@ -212,6 +254,7 @@ class _AccountSheetState extends State<AccountSheet> {
   late final limit = TextEditingController(text: centsText(widget.account?.limit ?? 0));
   late var type = widget.account?.type ?? (widget.debt ? AccountType.credit : AccountType.bank);
   late var color = widget.account?.color ?? 0xFFB0B0B0;
+  late var currency = widget.account?.currency ?? store.home;
 
   @override
   Widget build(BuildContext context) {
@@ -232,6 +275,7 @@ class _AccountSheetState extends State<AccountSheet> {
                 balance: bal,
                 limit: type == AccountType.bank ? 0 : lim,
                 color: color,
+                currency: currency,
               ),
             );
           };
@@ -278,9 +322,12 @@ class _AccountSheetState extends State<AccountSheet> {
           onSelectionChanged: (s) => setState(() => type = s.first),
         ),
         _gap,
+        _currencyPicker('Country and currency', currency, (c) => setState(() => currency = c)),
+        _gap,
         AmountField(
           balance,
           type == AccountType.bank ? 'Current balance' : 'Amount owed',
+          currency: currency,
           autofocus: a != null,
           onChanged: (_) => setState(() {}),
           onSubmitted: (_) => save?.call(),
@@ -290,6 +337,7 @@ class _AccountSheetState extends State<AccountSheet> {
           AmountField(
             limit,
             type == AccountType.credit ? 'Credit limit' : 'Original loan amount',
+            currency: currency,
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) => save?.call(),
           ),
@@ -382,4 +430,79 @@ class _GoalSheetState extends State<GoalSheet> {
       ],
     );
   }
+}
+
+// ----------------------------------------------------------------- currencies
+
+/// Home country, and what each other currency in use is worth.
+class CurrencySheet extends StatelessWidget {
+  const CurrencySheet({super.key});
+
+  Future<void> _editRate(BuildContext context, String currency) async {
+    final c = TextEditingController(text: _worth(currency));
+    double? typed() => switch (double.tryParse(c.text.replaceAll(',', ''))) {
+      final v? when v > 0 && v.isFinite => v,
+      _ => null,
+    };
+    final v = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('1 $currency is worth'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onSubmitted: (_) => Navigator.pop(context, typed()),
+          decoration: InputDecoration(suffixText: store.home),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, typed()), child: const Text('OK')),
+        ],
+      ),
+    );
+    if (v != null) store.setRate(currency, v);
+  }
+
+  static String _worth(String currency) => (store.rate(store.home) / store.rate(currency)).toStringAsPrecision(5);
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: store,
+    builder: (context, _) {
+      final foreign = {for (final a in store.accounts) a.currency}.difference({store.home});
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _title(context, 'Currencies'),
+          _currencyPicker(
+            'Home country',
+            store.home,
+            store.setHome,
+            hint: 'Totals, budgets and goals are in this currency.',
+          ),
+          _label('Exchange rates'),
+          if (foreign.isEmpty)
+            const Text('Add an account in another currency and its rate shows up here.', style: TextStyle(color: dim)),
+          for (final c in foreign)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              title: Text(currencyLabel(c)),
+              subtitle: Text('1 $c = ${_worth(c)} ${store.home}', style: const TextStyle(color: dim)),
+              trailing: const Icon(Icons.edit_outlined, size: 18, color: dim),
+              onTap: () => _editRate(context, c),
+            ),
+          if (foreign.isNotEmpty)
+            const Text(
+              'Rates are not updated for you. Tap one to change it.',
+              style: TextStyle(color: dim, fontSize: 12),
+            ),
+          _gap,
+          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+        ],
+      );
+    },
+  );
 }

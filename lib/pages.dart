@@ -48,6 +48,8 @@ Future<void> _backup(BuildContext context) async {
   if (context.mounted) _say(context, 'Backup copied. Paste it somewhere safe, like a note to yourself.');
 }
 
+Future<void> _currencies(BuildContext context) => showSheet(context, const CurrencySheet());
+
 Future<void> _restore(BuildContext context) async {
   final c = TextEditingController();
   final text = await showDialog<String>(
@@ -91,12 +93,16 @@ class Overview extends StatelessWidget {
     listenable: store,
     builder: (context, _) {
       final banks = store.accounts.where((a) => !a.isDebt).toList();
-      final month = store.txs.where((t) => sameMonth(t.date, DateTime.now()));
+      // Totals are in the home currency; each account and transaction shows its own.
+      final all = store.homeAccounts;
+      final month = store.inHome(store.txs.where((t) => sameMonth(t.date, DateTime.now())));
       int sum(TxType type) => month.where((t) => t.type == type).fold(0, (s, t) => s + t.amount);
       final spent = sum(TxType.expense), income = sum(TxType.income);
-      final cash = store.accounts.cash, debt = store.accounts.debt;
+      final cash = all.cash, debt = all.debt;
 
-      final trend = netWorthTrend(cash - debt, store.txs, DateTime.now());
+      // shortcut: past days are valued at today's rates, so the line shows saving and spending, not
+      // currency swings; keep a rate history if those ever need to show.
+      final trend = netWorthTrend(cash - debt, store.inHome(store.txs), DateTime.now());
       final change = trend.last - trend.first;
       // A chart is only worth showing once something happened before today.
       final charted = trend.take(trend.length - 1).any((v) => v != trend.first);
@@ -158,10 +164,11 @@ class Overview extends StatelessWidget {
                 top: 4,
                 right: 4,
                 child: PopupMenuButton<Future<void> Function(BuildContext)>(
-                  tooltip: 'Backup',
+                  tooltip: 'More',
                   icon: const Icon(Icons.more_horiz, color: dim),
                   onSelected: (action) => action(context),
                   itemBuilder: (_) => const [
+                    PopupMenuItem(value: _currencies, child: Text('Currencies')),
                     PopupMenuItem(value: _backup, child: Text('Copy a backup')),
                     PopupMenuItem(value: _restore, child: Text('Restore a backup')),
                   ],
@@ -175,7 +182,7 @@ class Overview extends StatelessWidget {
             children: [
               Stat('Cash', cash),
               Stat('Debt', debt, onTap: () => tab.value = 3),
-              Stat('Credit left', store.accounts.availableCredit, onTap: () => tab.value = 3),
+              Stat('Credit left', all.availableCredit, onTap: () => tab.value = 3),
             ],
           ),
         ],
@@ -205,7 +212,7 @@ class Overview extends StatelessWidget {
                             for (final a in banks)
                               if (a.balance > 0)
                                 Expanded(
-                                  flex: a.balance,
+                                  flex: store.convert(a.balance, a.currency),
                                   child: ColoredBox(color: Color(a.color)),
                                 ),
                           ],
@@ -217,7 +224,10 @@ class Overview extends StatelessWidget {
                   ListTile(
                     leading: Avatar(Color(a.color), letter: a.name),
                     title: Text(a.name),
-                    trailing: Text(money(a.balance), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    trailing: Text(
+                      money(a.balance, a.currency),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
                     onTap: () => showSheet(context, AccountSheet(account: a)),
                   ),
               ],
@@ -378,7 +388,7 @@ class _SpendingState extends State<Spending> {
     listenable: store,
     builder: (context, _) {
       final txs = store.txs.where((t) => sameMonth(t.date, month)).toList();
-      final spend = spendByCategory(txs);
+      final spend = spendByCategory(store.inHome(txs));
       final total = spend.values.fold(0, (s, v) => s + v);
       final budgetTotal = store.budgets.values.fold(0, (s, v) => s + v);
       // Biggest spend first, then categories that only have a budget.
@@ -393,6 +403,7 @@ class _SpendingState extends State<Spending> {
         t.type.name,
         store.account(t.accountId)?.name,
         store.account(t.toAccountId)?.name,
+        store.account(t.accountId)?.currency,
         (t.amount / 100).toStringAsFixed(2),
       ].any((s) => s != null && s.toLowerCase().contains(query));
       final shown = query.isNotEmpty
@@ -540,7 +551,8 @@ class _SpendingState extends State<Spending> {
                     children: [
                       Expanded(child: Text(DateFormat(query.isEmpty ? 'EEEE d MMM' : 'EEEE d MMM y').format(t.date))),
                       // What the day cost.
-                      if (spendByCategory(shown.where((x) => sameDay(x.date, t.date))).values.fold(0, (s, v) => s + v)
+                      if (spendByCategory(store.inHome(shown.where((x) => sameDay(x.date, t.date)))).values
+                              .fold(0, (s, v) => s + v)
                           case final spentThatDay && > 0)
                         Text('-${money(spentThatDay)}'),
                     ],
@@ -762,18 +774,12 @@ class Debts extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: store,
     builder: (context, _) {
-      final debts = store.accounts.where((a) => a.isDebt).toList();
+      final debts = store.accounts.where((a) => a.isDebt).toList(), all = store.homeAccounts;
       return _cardPage(
         context,
         [
           Header('Debts & credit', page: true, action: _addButton(context, 'Add debt', const AccountSheet(debt: true))),
-          Row(
-            spacing: 8,
-            children: [
-              Stat('Total owed', store.accounts.debt),
-              Stat('Available credit', store.accounts.availableCredit),
-            ],
-          ),
+          Row(spacing: 8, children: [Stat('Total owed', all.debt), Stat('Available credit', all.availableCredit)]),
           if (debts.isEmpty) const Empty(Icons.celebration_outlined, 'No debts. Nice.'),
         ],
         [
@@ -801,7 +807,10 @@ class Debts extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(money(a.balance), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                            Text(
+                              money(a.balance, a.currency),
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                            ),
                             const Text('owed', style: _empty),
                           ],
                         ),
@@ -820,8 +829,8 @@ class Debts extends StatelessWidget {
                             a.limit <= 0
                                 ? 'Tap to set ${a.type == AccountType.credit ? 'the credit limit' : 'the loan amount'}'
                                 : a.type == AccountType.credit
-                                ? '${money(a.available)} available of ${money(a.limit)}'
-                                : '${((1 - a.balance / a.limit) * 100).clamp(0, 100).floor()}% paid off of ${money(a.limit)}',
+                                ? '${money(a.available, a.currency)} available of ${money(a.limit, a.currency)}'
+                                : '${((1 - a.balance / a.limit) * 100).clamp(0, 100).floor()}% paid off of ${money(a.limit, a.currency)}',
                             style: _empty,
                           ),
                         ),

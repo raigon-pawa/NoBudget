@@ -17,6 +17,8 @@ class Store extends ChangeNotifier {
   List<Goal> goals = [];
   Map<String, int> budgets = {}; // category -> monthly limit
   List<Recurring> recurring = [];
+  String home = 'AUD'; // the currency totals, budgets and goals are in
+  Map<String, double> rates = {}; // units per US dollar, only for currencies whose rate the user changed
   bool loaded = false;
 
   late SharedPreferences _prefs;
@@ -45,6 +47,13 @@ class Store extends ChangeNotifier {
     final a = read('accounts', Account.fromMap), t = read('txs', Tx.fromMap), g = read('goals', Goal.fromMap);
     final r = read('recurring', Recurring.fromMap);
     final b = Map<String, int>.from(data['budgets'] as Map? ?? {});
+    final h = data['home'] as String? ?? 'AUD';
+    final x = {for (final e in (data['rates'] as Map? ?? {}).entries) e.key as String: (e.value as num).toDouble()};
+    if (![h, ...x.keys, ...a.map((y) => y.currency)].every(currencies.containsKey) || x.values.any((v) => !(v > 0))) {
+      throw const FormatException('Unknown currency or bad rate');
+    }
+    home = h;
+    rates = x;
     accounts = a;
     txs = t;
     goals = g;
@@ -88,6 +97,8 @@ class Store extends ChangeNotifier {
     'goals': {for (final g in goals) g.id: g.toMap()},
     'budgets': budgets,
     'recurring': {for (final r in recurring) r.id: r.toMap()},
+    'home': home,
+    'rates': rates,
   });
 
   /// Replaces all data with a backup made by [export]. Throws, changing nothing, if [backup] is not one.
@@ -102,6 +113,40 @@ class Store extends ChangeNotifier {
   }
 
   Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;
+
+  double rate(String currency) => rates[currency] ?? currencies[currency]!.$2;
+
+  /// [cents] of [from] in [to], or in the home currency.
+  int convert(int cents, String from, [String? to]) =>
+      from == (to ?? home) ? cents : (cents * rate(to ?? home) / rate(from)).round();
+
+  /// Accounts with their amounts turned into the home currency, so they can be added up.
+  List<Account> get homeAccounts => [
+    for (final a in accounts)
+      Account.fromMap(a.id, {
+        ...a.toMap(),
+        'balance': convert(a.balance, a.currency),
+        'limit': convert(a.limit, a.currency),
+      }),
+  ];
+
+  /// [txs] with their amounts turned into the home currency, so they can be added up.
+  Iterable<Tx> inHome(Iterable<Tx> txs) => txs.map(
+    (t) => Tx.fromMap(t.id, {...t.toMap(), 'amount': convert(t.amount, account(t.accountId)?.currency ?? home)}),
+  );
+
+  /// Sets what one unit of [currency] is worth in the home currency.
+  void setRate(String currency, double worth) {
+    rates[currency] = rate(home) / worth;
+    _changed();
+  }
+
+  // shortcut: budgets and goals keep their numbers when the home currency changes (500 stays 500);
+  // convert them here if people turn out to switch after setting them up.
+  void setHome(String currency) {
+    home = currency;
+    _changed();
+  }
 
   /// Applies the balance changes of [t], or undoes them when [sign] is -1.
   void _applyBalances(Tx t, int sign) {
