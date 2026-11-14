@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'store.dart';
 import 'ui.dart';
 
 class LoginPage extends StatefulWidget {
@@ -34,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
         'weak-password' => 'Use a password of at least 6 characters.',
         'invalid-email' => 'That does not look like an email address.',
         'network-request-failed' => 'No internet connection.',
-        _ => e.message ?? e.code,
+        _ => 'That did not work (${e.code}). Try again.',
       };
     }
     // After a successful sign-in this page is already gone.
@@ -50,7 +49,6 @@ class _LoginPageState extends State<LoginPage> {
     final auth = FirebaseAuth.instance;
     if (register) {
       await auth.createUserWithEmailAndPassword(email: email.text.trim(), password: password.text);
-      store.seedPresets();
     } else {
       await auth.signInWithEmailAndPassword(email: email.text.trim(), password: password.text);
     }
@@ -65,66 +63,69 @@ class _LoginPageState extends State<LoginPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: AutofillGroup(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 14,
-                children: [
-                  const Text(
-                    'NoBudget',
-                    style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1),
-                  ),
-                  Text(
-                    register
-                        ? 'Create an account to keep your budget private and backed up.'
-                        : 'Sign in to your budget.',
-                    style: const TextStyle(color: dim),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    autocorrect: false,
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(labelText: 'Email'),
-                  ),
-                  TextField(
-                    controller: password,
-                    obscureText: true,
-                    autofillHints: [register ? AutofillHints.newPassword : AutofillHints.password],
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => ok ? _submit() : null,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      helperText: register ? 'At least 6 characters' : null,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 14,
+                  children: [
+                    const Text(
+                      'NoBudget',
+                      style: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1),
                     ),
-                  ),
-                  if (message != null) Text(message!, style: const TextStyle(color: Color(0xFFE0A070))),
-                  FilledButton(
-                    onPressed: ok ? _submit : null,
-                    child: Text(busy ? 'Please wait…' : (register ? 'Create account' : 'Sign in')),
-                  ),
-                  TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            register = !register;
-                            message = null;
-                          }),
-                    child: Text(register ? 'I already have an account' : 'Create an account'),
-                  ),
-                  if (!register)
+                    Text(
+                      register
+                          ? 'Create an account to keep your budget private, backed up and on all your devices.'
+                          : 'Sign in to your budget.',
+                      style: const TextStyle(color: dim),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: email,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      autocorrect: false,
+                      textInputAction: TextInputAction.next,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(labelText: 'Email'),
+                    ),
+                    TextField(
+                      controller: password,
+                      obscureText: true,
+                      autofillHints: [register ? AutofillHints.newPassword : AutofillHints.password],
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) => ok ? _submit() : null,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        helperText: register ? 'At least 6 characters' : null,
+                      ),
+                    ),
+                    if (message != null) Text(message!, style: const TextStyle(color: Color(0xFFE0A070))),
+                    FilledButton(
+                      onPressed: ok ? _submit : null,
+                      child: Text(busy ? 'Please wait…' : (register ? 'Create account' : 'Sign in')),
+                    ),
                     TextButton(
-                      onPressed: busy || !email.text.contains('@')
+                      onPressed: busy
                           ? null
-                          : () => _run(
-                              () => FirebaseAuth.instance.sendPasswordResetEmail(email: email.text.trim()),
-                              done: 'If that email has an account, a reset link is on its way.',
-                            ),
-                      child: const Text('Forgot password?'),
+                          : () => setState(() {
+                              register = !register;
+                              message = null;
+                            }),
+                      child: Text(register ? 'I already have an account' : 'Create an account'),
                     ),
-                ],
+                    if (!register)
+                      TextButton(
+                        onPressed: busy || !email.text.contains('@')
+                            ? null
+                            : () => _run(
+                                () => FirebaseAuth.instance.sendPasswordResetEmail(email: email.text.trim()),
+                                done: 'If that email has an account, a reset link is on its way.',
+                              ),
+                        child: const Text('Forgot password?'),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

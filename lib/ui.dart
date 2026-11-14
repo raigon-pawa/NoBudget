@@ -6,14 +6,34 @@ import 'sheets.dart';
 import 'store.dart';
 
 final tab = ValueNotifier(0);
-final messenger = GlobalKey<ScaffoldMessengerState>();
+
+/// Wide enough for a side rail and two columns (tablet in landscape, desktop browser).
+bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= 900;
 
 const panelColor = Color(0xFF111111);
 const dim = Color(0xFF8A8A8A);
 const green = Color(0xFF8FD0A0);
+const red = Color(0xFFE08080);
 
-final _aud = NumberFormat.currency(locale: 'en_AU', symbol: '\$');
-String money(int cents) => _aud.format(cents / 100);
+/// "$" and the like for the home currency. Any other goes by its code, so two kinds of dollar never look
+/// alike, and so does a home currency whose sign is unfamiliar or missing from the app's font.
+String symbol(String currency) {
+  final s = NumberFormat.simpleCurrency(name: currency).currencySymbol;
+  return currency == store.home && const {'\$', '€', '£', '¥', '₹'}.contains(s) ? s : currency;
+}
+
+/// "$12.00" in the home currency, "12.00 USD" in any other.
+String money(int cents, [String? currency]) {
+  currency ??= store.home;
+  final digits = NumberFormat.simpleCurrency(name: currency).decimalDigits;
+  final sign = symbol(currency);
+  return sign != currency
+      ? NumberFormat.currency(locale: 'en_AU', symbol: sign, decimalDigits: digits).format(cents / 100)
+      : '${NumberFormat.decimalPatternDigits(locale: 'en_AU', decimalDigits: digits).format(cents / 100)} $currency';
+}
+
+String currencyLabel(String currency) => '${currencies[currency]!.$1} · $currency';
+
 String centsText(int cents) => cents == 0 ? '' : (cents / 100).toStringAsFixed(2);
 
 const categories = <String, (IconData, Color)>{
@@ -29,6 +49,13 @@ const categories = <String, (IconData, Color)>{
   'Travel': (Icons.flight_outlined, Color(0xFF80C0A0)),
   'Other': (Icons.more_horiz, Color(0xFF909090)),
 };
+String repeatLabel(Repeat r) => switch (r) {
+  Repeat.never => 'Does not repeat',
+  Repeat.weekly => 'Every week',
+  Repeat.fortnightly => 'Every 2 weeks',
+  Repeat.monthly => 'Every month',
+};
+
 (IconData, Color) cat(String name) => categories[name] ?? categories['Other']!;
 
 class Panel extends StatelessWidget {
@@ -48,6 +75,69 @@ class Panel extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(padding: padding, child: child),
+    ),
+  );
+}
+
+/// A page: one scrolling column on a phone, [left] and [right] side by side on a wide screen.
+class PageColumns extends StatelessWidget {
+  const PageColumns({super.key, this.top = const [], required this.left, this.right = const []});
+  final List<Widget> top, left, right;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isWide(context)) {
+      return ListView(
+        primary: false, // two pages overlap briefly while switching tabs
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96), // bottom clears the FAB
+        children: [...top, ...left, ...right],
+      );
+    }
+    Widget column(List<Widget> children) => Expanded(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+    );
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...top,
+              Row(crossAxisAlignment: CrossAxisAlignment.start, spacing: 32, children: [column(left), column(right)]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class Empty extends StatelessWidget {
+  const Empty(this.icon, this.text, {super.key, this.action});
+  final IconData icon;
+  final String text;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 40),
+    child: Column(
+      spacing: 12,
+      children: [
+        CircleAvatar(
+          radius: 28,
+          backgroundColor: panelColor,
+          child: Icon(icon, color: dim),
+        ),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: dim),
+        ),
+        ?action,
+      ],
     ),
   );
 }
@@ -123,7 +213,11 @@ class AnimatedMoney extends StatelessWidget {
     tween: Tween(end: cents.toDouble()),
     duration: const Duration(milliseconds: 500),
     curve: Curves.easeOutCubic,
-    builder: (_, v, _) => Text(money(v.round()), style: style, maxLines: 1),
+    builder: (_, v, _) => Text(
+      money(v.round()),
+      maxLines: 1,
+      style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]).merge(style), // digits do not jiggle
+    ),
   );
 }
 
@@ -155,12 +249,16 @@ class Stat extends StatelessWidget {
 }
 
 class TxTile extends StatelessWidget {
-  const TxTile(this.t, {super.key});
+  const TxTile(this.t, {super.key, this.showDate = true, this.detail, this.onTap});
   final Tx t;
+  final bool showDate; // off under a day heading
+  final String? detail; // shown instead of the account and date
+  final VoidCallback? onTap; // instead of opening the transaction
 
   @override
   Widget build(BuildContext context) {
-    final from = store.account(t.accountId)?.name ?? '?';
+    final account = store.account(t.accountId), to = store.account(t.toAccountId);
+    final from = account?.name ?? '?';
     final (icon, color, title, sign) = switch (t.type) {
       TxType.expense => (cat(t.category).$1, cat(t.category).$2, t.category, '-'),
       TxType.income => (Icons.south_west, green, 'Income', '+'),
@@ -171,37 +269,73 @@ class TxTile extends StatelessWidget {
       leading: Avatar(color, icon: icon),
       title: Text(t.note.isEmpty ? title : t.note, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${t.type == TxType.transfer ? '$from → ${store.account(t.toAccountId)?.name ?? '?'}' : from}'
-        ' · ${DateFormat('d MMM').format(t.date)}',
+        detail ??
+            '${t.type == TxType.transfer ? '$from to ${to?.name ?? '?'}' : from}'
+                '${showDate ? ' · ${DateFormat('d MMM').format(t.date)}' : ''}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: dim),
       ),
-      trailing: Text(
-        '$sign${money(t.amount)}',
+      trailing: Text.rich(
+        TextSpan(
+          text: '$sign${money(t.amount, account?.currency)}',
+          children: [
+            // Between currencies: what arrived at the other end.
+            if (t.toAmount != null)
+              TextSpan(
+                text: '\n${money(t.toAmount!, to?.currency)}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: dim),
+              ),
+          ],
+        ),
+        textAlign: TextAlign.end,
         style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.type == TxType.income ? green : null),
       ),
-      onTap: () => showSheet(context, TxSheet(tx: t)),
+      onTap: onTap ?? () => showSheet(context, TxSheet(tx: t)),
     );
   }
 }
 
-Future<T?> showSheet<T>(BuildContext context, Widget child) => showModalBottomSheet<T>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  showDragHandle: true,
-  backgroundColor: panelColor,
-  builder: (context) => Padding(
-    padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-    child: SingleChildScrollView(child: child),
-  ),
-);
+/// A form: a bottom sheet on a phone, a centred dialog on a wide screen.
+Future<T?> showSheet<T>(BuildContext context, Widget child) => isWide(context)
+    ? showDialog<T>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: panelColor,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: child),
+          ),
+        ),
+      )
+    : showModalBottomSheet<T>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        backgroundColor: panelColor,
+        builder: (context) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+          child: SingleChildScrollView(child: child),
+        ),
+      );
 
 class AmountField extends StatelessWidget {
-  const AmountField(this.controller, this.label, {super.key, this.onChanged, this.autofocus = false, this.hint});
+  const AmountField(
+    this.controller,
+    this.label, {
+    super.key,
+    this.onChanged,
+    this.onSubmitted,
+    this.autofocus = false,
+    this.hint,
+    this.currency,
+  });
   final TextEditingController controller;
   final String label;
   final String? hint;
-  final ValueChanged<String>? onChanged;
+  final String? currency; // the home currency when left out
+  final ValueChanged<String>? onChanged, onSubmitted;
   final bool autofocus;
 
   @override
@@ -209,19 +343,31 @@ class AmountField extends StatelessWidget {
     controller: controller,
     autofocus: autofocus,
     onChanged: onChanged,
+    onSubmitted: onSubmitted,
     keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-    decoration: InputDecoration(labelText: label, prefixText: '\$ ', helperText: hint, helperMaxLines: 2),
+    decoration: InputDecoration(
+      labelText: label,
+      prefixText: '${symbol(currency ?? store.home)} ',
+      helperText: hint,
+      helperMaxLines: 2,
+    ),
   );
 }
 
-/// Asks for a dollar amount. Null when cancelled, 0 when left empty.
+/// Asks for an amount in the home currency. Null when cancelled, 0 when left empty.
 Future<int?> askAmount(BuildContext context, String title, {int initial = 0, String? hint}) {
   final c = TextEditingController(text: centsText(initial));
   return showDialog<int>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: AmountField(c, 'Amount', autofocus: true, hint: hint),
+      content: AmountField(
+        c,
+        'Amount',
+        autofocus: true,
+        hint: hint,
+        onSubmitted: (_) => Navigator.pop(context, parseCents(c.text) ?? 0),
+      ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(context, parseCents(c.text) ?? 0), child: const Text('OK')),
