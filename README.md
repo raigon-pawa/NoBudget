@@ -6,6 +6,8 @@ your own private space in the cloud (Firebase), so it is backed up and the same 
 
 **Try it in a browser: <https://raigon-pawa.github.io/NoBudget/>**
 
+**Android:** download the APK from the [latest release](../../releases/latest).
+
 <p>
   <img src="docs/overview.png" width="200" alt="Overview: net worth and account balances">
   <img src="docs/spending.png" width="200" alt="Spending: donut chart, budgets and transactions">
