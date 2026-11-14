@@ -52,14 +52,14 @@ NoBudget is not affiliated with any of the banks or lenders named above.
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install), plus an Android device or
 emulator for the app, or Chrome for the website.
 
-You also need a Firebase project of your own (the free Spark plan is enough) with Email/Password
-sign-in switched on and a Firestore database created. Connect the code to it once:
+You also need a Firebase project of your own (the free Spark plan is enough) with a Firestore
+database created. Connect the code to it once:
 
 ```sh
 firebase login
 dart pub global activate flutterfire_cli
 flutterfire configure --platforms=android,web          # writes lib/firebase_options.dart, which is not in this repo
-firebase deploy --only firestore:rules --project <your-project-id>
+firebase deploy --only firestore:rules,auth --project <your-project-id>   # security rules, and switches on email sign-in
 ```
 
 Then:
