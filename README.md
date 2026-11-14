@@ -1,7 +1,7 @@
 # NoBudget
 
 A personal budgeting app for Android and the web, built with Flutter. Everything is entered by hand:
-there are no bank connections. You sign in with an email and password, and your budget is kept in
+there are no bank connections. You sign in with Google or with an email and password, and your budget is kept in
 your own private space in the cloud (Firebase), so it is backed up and the same on every device.
 
 **Try it in a browser: <https://raigon-pawa.github.io/NoBudget/>**
@@ -58,9 +58,17 @@ database created. Connect the code to it once:
 ```sh
 firebase login
 dart pub global activate flutterfire_cli
-flutterfire configure --platforms=android,web          # writes lib/firebase_options.dart, which is not in this repo
+flutterfire configure --platforms=android,web          # writes lib/firebase_options.dart and android/app/google-services.json (not in this repo)
 firebase deploy --only firestore:rules,auth --project <your-project-id>   # security rules, and switches on email sign-in
 ```
+
+For "Continue with Google", also do this in the Firebase console, then run `flutterfire configure`
+again so the Android config picks up the Google client:
+
+- Authentication → Sign-in method: enable Google (it asks for a public support email).
+- Authentication → Settings → Authorised domains: add the address your website is served from.
+- Project settings → your Android app: add the SHA-1 of the key the app is signed with
+  (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android` for the debug key).
 
 Then:
 
@@ -106,7 +114,7 @@ flutter run -d chrome --dart-define=EMULATOR=true
 |---|---|
 | `lib/models.dart` | Accounts, transactions, goals, currencies and the money maths |
 | `lib/store.dart` | The in-memory state the UI listens to, saved as one JSON document in the user's Firestore document |
-| `lib/login.dart` | Sign in, create an account, reset a password |
+| `lib/login.dart` | Sign in with Google or an email, create an account, reset a password |
 | `lib/main.dart` | Firebase start-up, the sign-in gate, theme and the shell: bottom bar on a phone, side rail on a wide screen |
 | `lib/pages.dart` | The four tabs |
 | `lib/sheets.dart` | Forms for transactions, accounts and goals |

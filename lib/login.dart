@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'ui.dart';
 
@@ -33,8 +35,12 @@ class _LoginPageState extends State<LoginPage> {
         'weak-password' => 'Use a password of at least 6 characters.',
         'invalid-email' => 'That does not look like an email address.',
         'network-request-failed' => 'No internet connection.',
+        'popup-closed-by-user' || 'cancelled-popup-request' || 'web-context-canceled' => null, // changed their mind
+        'popup-blocked' => 'Your browser blocked the Google window. Allow pop-ups for this site and try again.',
         _ => 'That did not work (${e.code}). Try again.',
       };
+    } on GoogleSignInException catch (e) {
+      result = e.code == GoogleSignInExceptionCode.canceled ? null : 'Google sign-in did not work (${e.code.name}).';
     }
     // After a successful sign-in this page is already gone.
     if (mounted) {
@@ -51,6 +57,20 @@ class _LoginPageState extends State<LoginPage> {
       await auth.createUserWithEmailAndPassword(email: email.text.trim(), password: password.text);
     } else {
       await auth.signInWithEmailAndPassword(email: email.text.trim(), password: password.text);
+    }
+  });
+
+  /// Google decides whether this is a new account or an existing one.
+  void _google() => _run(() async {
+    if (kIsWeb) {
+      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+    } else {
+      // The account chooser. The app's Google client id comes from android/app/google-services.json.
+      await GoogleSignIn.instance.initialize();
+      final account = await GoogleSignIn.instance.authenticate();
+      await FirebaseAuth.instance.signInWithCredential(
+        GoogleAuthProvider.credential(idToken: account.authentication.idToken),
+      );
     }
   });
 
@@ -105,6 +125,7 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: ok ? _submit : null,
                       child: Text(busy ? 'Please wait…' : (register ? 'Create account' : 'Sign in')),
                     ),
+                    OutlinedButton(onPressed: busy ? null : _google, child: const Text('Continue with Google')),
                     TextButton(
                       onPressed: busy
                           ? null
