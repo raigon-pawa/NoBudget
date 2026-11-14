@@ -125,7 +125,29 @@ class _LoginPageState extends State<LoginPage> {
                       onPressed: ok ? _submit : null,
                       child: Text(busy ? 'Please wait…' : (register ? 'Create account' : 'Sign in')),
                     ),
-                    OutlinedButton(onPressed: busy ? null : _google, child: const Text('Continue with Google')),
+                    OutlinedButton(
+                      onPressed: busy ? null : _google,
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'Continue with ',
+                          children: [
+                            // The letters of Google's logo: blue, red, yellow, blue, green, red.
+                            for (final (letter, color) in [
+                              ('G', 0xFF4285F4),
+                              ('o', 0xFFEA4335),
+                              ('o', 0xFFFBBC05),
+                              ('g', 0xFF4285F4),
+                              ('l', 0xFF34A853),
+                              ('e', 0xFFEA4335),
+                            ])
+                              TextSpan(
+                                text: letter,
+                                style: TextStyle(color: Color(color), fontWeight: FontWeight.w700),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                     TextButton(
                       onPressed: busy
                           ? null
