@@ -168,9 +168,6 @@ class Overview extends StatelessWidget {
       // shortcut: past days are valued at today's rates, so the line shows saving and spending, not
       // currency swings; keep a rate history if those ever need to show.
       final trend = netWorthTrend(cash - debt, store.inHome(store.txs), DateTime.now());
-      final change = trend.last - trend.first;
-      // A chart is only worth showing once something happened before today.
-      final charted = trend.take(trend.length - 1).any((v) => v != trend.first);
 
       return PageColumns(
         top: [
@@ -178,54 +175,7 @@ class Overview extends StatelessWidget {
           Stack(
             fit: StackFit.passthrough, // the card keeps the full width
             children: [
-              Panel(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Net worth', style: TextStyle(color: dim)),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: AnimatedMoney(
-                              cash - debt,
-                              style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1),
-                            ),
-                          ),
-                          if (change != 0)
-                            Row(
-                              spacing: 6,
-                              children: [
-                                Icon(
-                                  change >= 0 ? Icons.trending_up : Icons.trending_down,
-                                  size: 18,
-                                  color: change >= 0 ? green : red,
-                                ),
-                                Text(
-                                  '${change >= 0 ? '+' : '-'}${money(change.abs())} in the last 30 days',
-                                  style: const TextStyle(color: dim, fontSize: 13),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (charted)
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: 1),
-                        duration: const Duration(milliseconds: 700),
-                        curve: Curves.easeOutCubic,
-                        builder: (_, t, _) =>
-                            CustomPaint(size: const Size(double.infinity, 64), painter: _Spark(trend, t)),
-                      ),
-                  ],
-                ),
-              ),
+              _NetWorth(trend),
               Positioned(
                 top: 4,
                 right: 4,
@@ -345,11 +295,109 @@ class Overview extends StatelessWidget {
   );
 }
 
+/// Net worth with its 30-day line. Pointing at the line (hover, or drag along it) shows that day's figure.
+class _NetWorth extends StatefulWidget {
+  const _NetWorth(this.trend);
+  final List<int> trend; // close of each of the last 30 days, ending today
+
+  @override
+  State<_NetWorth> createState() => _NetWorthState();
+}
+
+class _NetWorthState extends State<_NetWorth> {
+  int? day; // index into the trend under the pointer
+
+  void _point(double x, double width) =>
+      setState(() => day = (x / width * (widget.trend.length - 1)).round().clamp(0, widget.trend.length - 1));
+
+  void _leave() => setState(() => day = null);
+
+  @override
+  Widget build(BuildContext context) {
+    final trend = widget.trend, change = trend.last - trend.first, d = day;
+    // A chart is only worth showing once something happened before today.
+    final charted = trend.take(trend.length - 1).any((v) => v != trend.first);
+    const big = TextStyle(fontSize: 44, fontWeight: FontWeight.w700, letterSpacing: -1);
+    const small = TextStyle(color: dim, fontSize: 13);
+    final now = DateTime.now();
+    String dayName(int i) => i == trend.length - 1
+        ? 'Today'
+        : DateFormat('EEEE d MMM').format(DateTime(now.year, now.month, now.day - (trend.length - 1 - i)));
+    return Panel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Net worth', style: TextStyle(color: dim)),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  // Scrubbing shows each day at once; the animation is for changes to the total.
+                  child: d == null
+                      ? AnimatedMoney(trend.last, style: big)
+                      : Text(
+                          money(trend[d]),
+                          style: big.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                        ),
+                ),
+                if (d != null)
+                  SizedBox(
+                    height: 18, // the height of the change line below, so the card does not jump
+                    child: Text(dayName(d), style: small),
+                  )
+                else if (change != 0)
+                  Row(
+                    spacing: 6,
+                    children: [
+                      Icon(
+                        change >= 0 ? Icons.trending_up : Icons.trending_down,
+                        size: 18,
+                        color: change >= 0 ? green : red,
+                      ),
+                      Text('${change >= 0 ? '+' : '-'}${money(change.abs())} in the last 30 days', style: small),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          if (charted)
+            LayoutBuilder(
+              builder: (context, box) => MouseRegion(
+                onHover: (e) => _point(e.localPosition.dx, box.maxWidth),
+                onExit: (_) => _leave(),
+                child: GestureDetector(
+                  // Only sideways drags, so scrolling the page past the chart still works.
+                  onHorizontalDragStart: (e) => _point(e.localPosition.dx, box.maxWidth),
+                  onHorizontalDragUpdate: (e) => _point(e.localPosition.dx, box.maxWidth),
+                  onHorizontalDragEnd: (_) => _leave(),
+                  onHorizontalDragCancel: _leave,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 700),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, t, _) =>
+                        CustomPaint(size: const Size(double.infinity, 64), painter: _Spark(trend, t, d)),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Line chart with a soft fill, drawn in from the left as [t] goes 0..1.
 class _Spark extends CustomPainter {
-  _Spark(this.values, this.t);
+  _Spark(this.values, this.t, [this.marked]);
   final List<int> values;
   final double t;
+  final int? marked; // the day being pointed at
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -381,10 +429,16 @@ class _Spark extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..color = Colors.white,
     );
+    if (marked case final i?) {
+      final p = at(i);
+      canvas.drawLine(Offset(p.dx, 0), Offset(p.dx, size.height), Paint()..color = Colors.white38);
+      canvas.drawCircle(p, 4.5, Paint()..color = Colors.white);
+      canvas.drawCircle(p, 4.5, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = panelColor);
+    }
   }
 
   @override
-  bool shouldRepaint(_Spark old) => old.t != t || !listEquals(old.values, values);
+  bool shouldRepaint(_Spark old) => old.t != t || old.marked != marked || !listEquals(old.values, values);
 }
 
 class _Figure extends StatelessWidget {
@@ -486,6 +540,7 @@ class _SpendingState extends State<Spending> {
           Row(
             children: [
               IconButton(tooltip: 'Previous month', onPressed: () => _shift(-1), icon: const Icon(Icons.chevron_left)),
+              if (!sameMonth(month, DateTime.now())) const SizedBox(width: 48), // keeps the title centred
               Expanded(
                 child: Text(
                   DateFormat('MMMM y').format(month),
@@ -493,6 +548,12 @@ class _SpendingState extends State<Spending> {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
+              if (!sameMonth(month, DateTime.now()))
+                IconButton(
+                  tooltip: 'Back to this month',
+                  onPressed: () => _shift((DateTime.now().year - month.year) * 12 + DateTime.now().month - month.month),
+                  icon: const Icon(Icons.today_outlined, size: 20),
+                ),
               IconButton(tooltip: 'Next month', onPressed: () => _shift(1), icon: const Icon(Icons.chevron_right)),
             ],
           ),
