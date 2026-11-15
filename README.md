@@ -40,6 +40,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
   choose to remove it.
 - **Backup**: copy everything as text from the menu on the net worth card, and paste it back to
   restore, on the same device or another one.
+- **Spreadsheet export**: "Copy transactions as CSV" in the same menu puts every transaction on the
+  clipboard, ready to paste into a spreadsheet.
 - **Currencies**: each account has a country and currency (32 to pick from), and adding an account
   suggests well-known banks, wallets and pay-later providers for the country you pick. Totals are shown in
   your home currency, and a transfer between two currencies records both what left and what
