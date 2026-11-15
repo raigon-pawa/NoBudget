@@ -29,6 +29,7 @@ On a wide screen the same app lays itself out in two columns with a side rail:
   bank accounts.
 - **Spending**: expenses by category for each month, optional monthly budgets per category, and
   the full transaction history. Tap a slice of the chart to filter, swipe a transaction to delete it.
+  A bar chart shows the last six months, and how this month compares with the same days of last month.
 - **Goals**: savings targets with an optional deadline and the weekly amount needed to hit it.
 - **Debts**: buy-now-pay-later, credit and loan accounts with the amount owed, available credit
   and one-tap repayments.

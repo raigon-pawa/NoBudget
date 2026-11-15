@@ -290,6 +290,11 @@ Map<String, int> spendByCategory(Iterable<Tx> txs) {
   return spend;
 }
 
+/// What was spent in [month], counting only its first [days] days when given.
+int monthSpend(Iterable<Tx> txs, DateTime month, [int? days]) => txs
+    .where((t) => t.type == TxType.expense && sameMonth(t.date, month) && (days == null || t.date.day <= days))
+    .fold(0, (s, t) => s + t.amount);
+
 /// Net worth at the close of each of the last [days] days, oldest first and ending today at [current],
 /// worked backwards through the transactions. Transfers only move money around, so they change nothing.
 List<int> netWorthTrend(int current, Iterable<Tx> txs, DateTime now, {int days = 30}) {

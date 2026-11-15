@@ -52,6 +52,22 @@ void main() {
     expect(spend, {'Groceries': 1250, 'Fun': 400});
   });
 
+  test('spending in a month, or in its first days', () {
+    Tx t(TxType type, int amount, DateTime date) => Tx(type: type, amount: amount, accountId: 'a', date: date);
+    final txs = [
+      t(TxType.expense, 1000, DateTime(2026, 10, 3)),
+      t(TxType.expense, 2000, DateTime(2026, 10, 20, 23, 59)),
+      t(TxType.income, 9000, DateTime(2026, 10, 5)),
+      t(TxType.transfer, 500, DateTime(2026, 10, 5)),
+      t(TxType.expense, 400, DateTime(2026, 11, 1)),
+    ];
+    expect(monthSpend(txs, DateTime(2026, 10)), 3000);
+    expect(monthSpend(txs, DateTime(2026, 10), 20), 3000); // the whole of the 20th counts
+    expect(monthSpend(txs, DateTime(2026, 10), 19), 1000);
+    expect(monthSpend(txs, DateTime(2026, 11)), 400);
+    expect(monthSpend(txs, DateTime(2026, 9)), 0);
+  });
+
   test('parseCents', () {
     expect(parseCents('19.99'), 1999);
     expect(parseCents(r'$1,234.5'), 123450);

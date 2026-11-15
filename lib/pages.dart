@@ -556,6 +556,8 @@ class _SpendingState extends State<Spending> {
               ],
             ),
           ),
+          const Header('Last 6 months'),
+          _history(),
           if (store.recurring.isNotEmpty) ...[
             const Header('Repeating'),
             Panel(
@@ -657,6 +659,84 @@ class _SpendingState extends State<Spending> {
       );
     },
   );
+
+  /// Spending per month as bars, the picked month lit, and how it compares with the month before.
+  Widget _history() {
+    final now = DateTime.now(), all = store.inHome(store.txs).toList();
+    // The six months up to this one, or up to the picked month when that is later.
+    final last = month.isAfter(now) ? month : DateTime(now.year, now.month);
+    final months = [for (var i = 5; i >= 0; i--) DateTime(last.year, last.month - i)];
+    final totals = [for (final m in months) monthSpend(all, m)];
+    final top = totals.fold(1, max);
+    // This month so far against the same days of last month; past months whole.
+    final current = sameMonth(month, now), before = DateTime(month.year, month.month - 1);
+    final was = monthSpend(all, before, current ? now.day : null), diff = monthSpend(all, month) - was;
+    final beforeName = DateFormat('MMMM').format(before);
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: [
+          SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              spacing: 8,
+              children: [
+                for (final (i, m) in months.indexed)
+                  Expanded(
+                    child: Tooltip(
+                      message: '${DateFormat('MMMM y').format(m)}: ${money(totals[i])}',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => setState(() {
+                          month = m;
+                          filter = null;
+                        }),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 400),
+                              curve: Curves.easeOutCubic,
+                              height: max(3, 90 * totals[i] / top),
+                              constraints: const BoxConstraints(maxWidth: 36),
+                              decoration: BoxDecoration(
+                                color: sameMonth(m, month) ? Colors.white : Colors.white24,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              DateFormat('MMM').format(m),
+                              style: TextStyle(fontSize: 12, color: sameMonth(m, month) ? Colors.white : dim),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (was > 0 && diff != 0) // nothing to compare with before the first month of entries
+            Row(
+              spacing: 6,
+              children: [
+                Icon(diff < 0 ? Icons.trending_down : Icons.trending_up, size: 18, color: diff < 0 ? green : red),
+                Expanded(
+                  child: Text(
+                    '${money(diff.abs())} ${diff < 0 ? 'less' : 'more'} than '
+                    '${current ? 'by this day in $beforeName' : beforeName}',
+                    style: const TextStyle(color: dim, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _categoryRow(String c, int spent, int budget) {
     final (icon, color) = cat(c);
