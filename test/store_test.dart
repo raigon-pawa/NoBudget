@@ -82,6 +82,32 @@ void main() {
     expect(stopped.txs.length, 3);
   });
 
+  test('editing a repeating transaction changes what it adds from then on', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = Store();
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    await s.open();
+    final bank = s.accounts.first.id!;
+    final gym = Tx(type: TxType.expense, amount: 2000, accountId: bank, category: 'Fun', date: today);
+    s.addTx(gym);
+    s.addRecurring(gym, Repeat.weekly);
+
+    // Pricier and monthly, starting in ten days: nothing is added yet, and past entries keep their amount.
+    final start = DateTime(today.year, today.month, today.day + 10);
+    final id = s.recurring.single.id;
+    Tx pricier(DateTime date) =>
+        Tx.fromMap(null, {...gym.toMap(), 'amount': 3000, 'date': date.millisecondsSinceEpoch});
+    s.saveRecurring(Recurring(id: id, tx: pricier(start), every: Repeat.monthly));
+    expect(s.recurring.single.next, start);
+    expect(s.txs.single.amount, 2000);
+
+    // Moved to today: added at once.
+    s.saveRecurring(Recurring(id: id, tx: pricier(today), every: Repeat.monthly));
+    expect(s.txs.map((t) => t.amount), unorderedEquals([2000, 3000]));
+    expect(s.account(bank)!.balance, -5000);
+    expect(s.recurring.single.next, occurrence(today, Repeat.monthly, 1));
+  });
+
   test('a backup restores into an empty app, and junk is refused', () async {
     SharedPreferences.setMockInitialValues({});
     final s = Store();

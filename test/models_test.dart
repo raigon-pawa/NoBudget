@@ -102,6 +102,28 @@ void main() {
     expect(us.last.type, AccountType.credit);
   });
 
+  test('upcoming repeats, soonest first', () {
+    Recurring r(String note, Repeat every, DateTime first, int done) => Recurring(
+      tx: Tx(type: TxType.expense, amount: 100, accountId: 'a', note: note, date: first),
+      every: every,
+      done: done,
+    );
+    final now = DateTime(2026, 11, 16, 15);
+    final list = upcoming([
+      r('rent', Repeat.monthly, DateTime(2026, 10, 1), 2), // next 1 Dec
+      r('gym', Repeat.weekly, DateTime(2026, 11, 2), 3), // next 23 Nov, then 30 Nov, 7 Dec, 14 Dec
+      r('later', Repeat.monthly, DateTime(2027, 1, 1), 0), // past the 30 days
+    ], now);
+    expect([for (final (r, d) in list) '${r.tx.note} ${d.month}/${d.day}'], [
+      'gym 11/23',
+      'gym 11/30',
+      'rent 12/1',
+      'gym 12/7',
+      'gym 12/14',
+    ]);
+    expect(upcoming([], now), isEmpty);
+  });
+
   test('repeat dates', () {
     final d = DateTime(2026, 1, 31);
     expect(occurrence(d, Repeat.weekly, 2), DateTime(2026, 2, 14));

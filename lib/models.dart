@@ -235,6 +235,15 @@ DateTime occurrence(DateTime first, Repeat every, int n) {
   return DateTime(first.year, first.month + n, min(first.day, lastDay));
 }
 
+/// What the repeating transactions will add after [now] and within [days] days, soonest first.
+List<(Recurring, DateTime)> upcoming(Iterable<Recurring> recurring, DateTime now, {int days = 30}) {
+  final end = DateTime(now.year, now.month, now.day + days + 1);
+  return [
+    for (final r in recurring)
+      for (var n = r.done; occurrence(r.tx.date, r.every, n).isBefore(end); n++) (r, occurrence(r.tx.date, r.every, n)),
+  ]..sort((a, b) => a.$2.compareTo(b.$2));
+}
+
 class Goal {
   const Goal({this.id, required this.name, required this.target, this.saved = 0, this.deadline});
 
