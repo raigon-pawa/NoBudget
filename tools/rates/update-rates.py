@@ -73,11 +73,13 @@ def main():
     git('reset', '-q', '--hard', 'origin/main')
     file = repo / 'rates.json'
     if file.exists() and json.loads(file.read_text())['date'] >= out['date']:
-        return  # nothing newer yet
+        print(f'Already published rates for {out["date"]}; the source has nothing newer yet.')
+        return
     file.write_text(text)
     git('add', 'rates.json')
     git('commit', '-q', '-m', f'Rates for {out["date"]}')
     git('push', '-q', 'origin', 'HEAD:main')
+    print(f'Published rates for {out["date"]}.')
 
 
 if __name__ == '__main__':
