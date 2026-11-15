@@ -142,6 +142,28 @@ void main() {
     expect(again.export(), backup);
   });
 
+  test('daily rates are used unless the user set their own, and bad ones are refused', () async {
+    SharedPreferences.setMockInitialValues({});
+    final s = Store();
+    await s.open();
+    expect(() => s.useDailyRates('<html>'), throwsA(anything));
+    expect(() => s.useDailyRates('{"date": "2026-11-15"}'), throwsA(anything));
+    expect(s.daily, isEmpty);
+
+    // EUR is fine, GBP is a hundred times off (a broken or tampered file), XYZ is unknown to the app.
+    s.useDailyRates('{"date": "2026-11-15", "rates": {"USD": 1, "EUR": 0.9, "GBP": 75.6, "XYZ": 3, "AUD": "x"}}');
+    expect(s.daily, {'USD': 1.0, 'EUR': 0.9});
+    expect(s.dailyDate, '2026-11-15');
+    expect(s.rate('EUR'), 0.9);
+    expect(s.rate('GBP'), currencies['GBP']!.$2);
+
+    s.setRate('EUR', 2); // 1 EUR = 2 AUD
+    expect(s.convert(100, 'EUR'), 200);
+    s.clearRate('EUR');
+    expect(s.rate('EUR'), 0.9);
+    expect(s.export(), isNot(contains('0.9'))); // daily rates stay on the device, out of the synced data
+  });
+
   group('sync', () {
     // A stand-in for the user's Firestore document that counts what would be billed.
     late Map<String, dynamic>? doc;

@@ -458,12 +458,18 @@ class CurrencySheet extends StatelessWidget {
           decoration: InputDecoration(suffixText: store.home),
         ),
         actions: [
+          if (store.rates.containsKey(currency))
+            TextButton(onPressed: () => Navigator.pop(context, -1.0), child: const Text('Use the daily rate')),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, typed()), child: const Text('OK')),
         ],
       ),
     );
-    if (v != null) store.setRate(currency, v);
+    if (v == -1) {
+      store.clearRate(currency);
+    } else if (v != null) {
+      store.setRate(currency, v);
+    }
   }
 
   static String _worth(String currency) => (store.rate(store.home) / store.rate(currency)).toStringAsPrecision(5);
@@ -492,14 +498,19 @@ class CurrencySheet extends StatelessWidget {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               title: Text(currencyLabel(c)),
-              subtitle: Text('1 $c = ${_worth(c)} ${store.home}', style: const TextStyle(color: dim)),
+              subtitle: Text(
+                '1 $c = ${_worth(c)} ${store.home}${store.rates.containsKey(c) ? ' · your rate' : ''}',
+                style: const TextStyle(color: dim),
+              ),
               trailing: const Icon(Icons.edit_outlined, size: 18, color: dim),
               onTap: () => _editRate(context, c),
             ),
           if (foreign.isNotEmpty)
-            const Text(
-              'Rates are not updated for you. Tap one to change it.',
-              style: TextStyle(color: dim, fontSize: 12),
+            Text(
+              store.dailyDate == null
+                  ? 'Built-in rates until the daily ones download. Tap one to set your own.'
+                  : 'Daily rates from ${store.dailyDate}. Tap one to set your own.',
+              style: const TextStyle(color: dim, fontSize: 12),
             ),
           _gap,
           FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),

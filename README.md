@@ -43,8 +43,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Currencies**: each account has a country and currency (32 to pick from), and adding an account
   suggests well-known banks, wallets and pay-later providers for the country you pick. Totals are shown in
   your home currency, and a transfer between two currencies records both what left and what
-  arrived. Exchange rates start from built-in values and are corrected by hand; the app does not
-  look them up.
+  arrived. Exchange rates update daily (built-in values until the first download), and you can
+  set your own for any currency.
 - **Transactions update balances for you**: paying with a BNPL account raises what you owe, and a
   transfer into a debt account counts as a repayment.
 
@@ -119,6 +119,25 @@ To try changes without touching real data, run the Firebase emulators and point 
 firebase emulators:start --only auth,firestore --project demo-nobudget
 flutter run -d chrome --dart-define=EMULATOR=true
 ```
+
+## Exchange rates
+
+`tools/rates/update-rates.py` runs once a day on a machine at home: it fetches public-domain rates
+([fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api), CC0), checks them and
+pushes `rates.json` to the [nobudget-rates](https://github.com/raigon-pawa/nobudget-rates) repo.
+The app downloads that file from GitHub at most twice a day and keeps it on the device, so the
+machine only makes outbound connections and is never contacted by the app, and rates cost no
+Firebase requests. A rate more than ten times off the built-in one is ignored.
+
+To set it up on a Linux machine with systemd, python3 and git:
+
+```sh
+git clone https://github.com/raigon-pawa/NoBudget && NoBudget/tools/rates/install.sh
+```
+
+It makes an SSH key that only the rates repo accepts (add it there as a deploy key with write
+access), and a daily systemd timer. Commits use a fixed name and UTC time, so they carry nothing
+about the machine.
 
 ## Code layout
 

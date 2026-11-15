@@ -64,3 +64,6 @@ key.properties
 /android/app/google-services.json
 .firebase/
 firebase-debug.log
+
+# Instructions for Claude on this machine only
+CLAUDE.md

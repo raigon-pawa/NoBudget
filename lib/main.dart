@@ -16,7 +16,14 @@ Future<void> main() async {
   store.askKeepDevice = _askKeepDevice;
   runApp(const App());
   // Check for changes from other devices on return, and send our own before the app goes away.
-  AppLifecycleListener(onResume: store.pull, onHide: store.flush);
+  AppLifecycleListener(
+    onResume: () {
+      store.pull();
+      store.refreshRates();
+    },
+    onHide: store.flush,
+  );
+  store.refreshRates();
   connectFirebase();
 }
 

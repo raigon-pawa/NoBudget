@@ -1,0 +1,8 @@
+[Unit]
+Description=Publish NoBudget exchange rates
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env python3 %h/.local/share/nobudget-rates/update-rates.py

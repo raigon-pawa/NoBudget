@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
@@ -10,6 +11,10 @@ import 'models.dart';
 final store = Store();
 
 const _key = 'data', _revKey = 'syncedRev', _unsentKey = 'unsent', _noteKey = 'browserNoteClosed';
+const _dailyKey = 'dailyRates', _dailyAtKey = 'dailyRatesFetched';
+
+/// Published once a day by tools/rates/update-rates.py. GitHub serves it, so the app never contacts that machine.
+const dailyRatesUrl = 'https://raw.githubusercontent.com/raigon-pawa/nobudget-rates/main/rates.json';
 
 /// The signed-in user's copy in the cloud: one document holding `data` (the [Store.export] text) and `rev`
 /// (an id that changes with every save). Firestore in the app, a map in the tests.
@@ -29,6 +34,8 @@ class Store extends ChangeNotifier {
   List<Recurring> recurring = [];
   String home = 'AUD'; // the currency totals, budgets and goals are in
   Map<String, double> rates = {}; // units per US dollar, only for currencies whose rate the user changed
+  Map<String, double> daily = {}; // units per US dollar from the daily rates, kept on this device only
+  String? dailyDate; // the day those rates are from
   bool loaded = false;
 
   String? error; // why the data on this device could not be opened
@@ -52,11 +59,42 @@ class Store extends ChangeNotifier {
   Future<void> open([DateTime? now]) async {
     _prefs = await SharedPreferences.getInstance();
     try {
+      useDailyRates(_prefs.getString(_dailyKey));
+    } catch (_) {} // a bad copy is replaced by the next download
+    try {
       _start(_prefs.getString(_key), now ?? DateTime.now());
     } catch (e) {
       error = 'Could not read the data saved on this device: $e';
       notifyListeners();
     }
+  }
+
+  /// Downloads the daily rates, at most twice a day. Offline or refused, the last ones (or the built-in) stay.
+  Future<void> refreshRates() async {
+    final at = DateTime.fromMillisecondsSinceEpoch(_prefs.getInt(_dailyAtKey) ?? 0);
+    if (DateTime.now().difference(at).inHours < 12) return;
+    try {
+      final r = await http.get(Uri.parse(dailyRatesUrl)).timeout(const Duration(seconds: 15));
+      if (r.statusCode != 200) return;
+      useDailyRates(r.body);
+      _prefs.setString(_dailyKey, r.body);
+      _prefs.setInt(_dailyAtKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  /// Takes the rates the app knows from a rates.json. Throws, changing nothing, if it is not one; a rate more
+  /// than ten times off the built-in one is skipped, so a bad or tampered file cannot wreck the totals.
+  @visibleForTesting
+  void useDailyRates(String? body) {
+    if (body == null) return;
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final date = data['date'] as String, all = data['rates'] as Map<String, dynamic>;
+    daily = {
+      for (final MapEntry(:key, :value) in currencies.entries)
+        if (all[key] case final num v when v.isFinite && v > value.$2 / 10 && v < value.$2 * 10) key: v.toDouble(),
+    };
+    dailyDate = date;
+    notifyListeners();
   }
 
   /// Whether the website's note that data lives only in this browser was closed.
@@ -281,7 +319,7 @@ class Store extends ChangeNotifier {
 
   Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;
 
-  double rate(String currency) => rates[currency] ?? currencies[currency]!.$2;
+  double rate(String currency) => rates[currency] ?? daily[currency] ?? currencies[currency]!.$2;
 
   /// [cents] of [from] in [to], or in the home currency.
   int convert(int cents, String from, [String? to]) =>
@@ -305,6 +343,12 @@ class Store extends ChangeNotifier {
   /// Sets what one unit of [currency] is worth in the home currency.
   void setRate(String currency, double worth) {
     rates[currency] = rate(home) / worth;
+    _changed();
+  }
+
+  /// Goes back to the daily rate for [currency].
+  void clearRate(String currency) {
+    rates.remove(currency);
     _changed();
   }
 

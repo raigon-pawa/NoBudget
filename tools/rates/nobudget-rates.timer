@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish NoBudget exchange rates daily
+
+[Timer]
+# The source updates around midnight UTC.
+OnCalendar=*-*-* 01:00:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
