@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import 'login.dart';
 import 'models.dart';
 import 'sheets.dart';
 import 'store.dart';
@@ -51,9 +52,36 @@ Future<void> _backup(BuildContext context) async {
 
 Future<void> _currencies(BuildContext context) => showSheet(context, const CurrencySheet());
 
+Future<void> _signIn(BuildContext context) async {
+  if (!await connectFirebase()) {
+    if (context.mounted) _say(context, 'Sync needs an internet connection. Try again once you are online.');
+    return;
+  }
+  if (context.mounted) await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const LoginPage()));
+}
+
 Future<void> _signOut(BuildContext context) async {
-  final email = FirebaseAuth.instance.currentUser?.email;
-  if (await confirm(context, 'Sign out of $email?', action: 'Sign out')) await FirebaseAuth.instance.signOut();
+  final forget = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Sign out of ${FirebaseAuth.instance.currentUser?.email}?'),
+      content: const Text('Your budget stays in your account. Remove it from this device if others use it.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove from device')),
+        FilledButton(onPressed: () => Navigator.pop(context, false), child: const Text('Sign out')),
+      ],
+    ),
+  );
+  if (forget == null) return;
+  await store.flush().timeout(const Duration(seconds: 5), onTimeout: () {});
+  if (forget && store.unsent) {
+    // The only copy of the latest changes is here.
+    if (context.mounted) _say(context, 'Your latest changes have not reached your account yet. Try again online.');
+    return;
+  }
+  store.stopSync(forget: forget);
+  await FirebaseAuth.instance.signOut();
 }
 
 Future<void> _restore(BuildContext context) async {
@@ -91,6 +119,37 @@ Future<void> _restore(BuildContext context) async {
 
 // ------------------------------------------------------------------- overview
 
+/// On the website, signed out: everything lives in this browser's storage, which "clear browsing data" erases.
+class _BrowserNote extends StatelessWidget {
+  const _BrowserNote();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Panel(
+      padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 18, color: dim),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Saved only in this browser. Clearing its cookies or site data erases it.',
+              style: TextStyle(color: dim, fontSize: 13),
+            ),
+          ),
+          TextButton(onPressed: () => _signIn(context), child: const Text('Sync')),
+          IconButton(
+            tooltip: 'Dismiss',
+            icon: const Icon(Icons.close, size: 18, color: dim),
+            onPressed: store.closeBrowserNote,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class Overview extends StatelessWidget {
   const Overview({super.key});
 
@@ -115,6 +174,7 @@ class Overview extends StatelessWidget {
 
       return PageColumns(
         top: [
+          if (kIsWeb && !store.syncing && !store.browserNoteClosed) const _BrowserNote(),
           Stack(
             fit: StackFit.passthrough, // the card keeps the full width
             children: [
@@ -173,11 +233,13 @@ class Overview extends StatelessWidget {
                   tooltip: 'More',
                   icon: const Icon(Icons.more_horiz, color: dim),
                   onSelected: (action) => action(context),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: _currencies, child: Text('Currencies')),
-                    PopupMenuItem(value: _backup, child: Text('Copy a backup')),
-                    PopupMenuItem(value: _restore, child: Text('Restore a backup')),
-                    PopupMenuItem(value: _signOut, child: Text('Sign out')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: _currencies, child: Text('Currencies')),
+                    const PopupMenuItem(value: _backup, child: Text('Copy a backup')),
+                    const PopupMenuItem(value: _restore, child: Text('Restore a backup')),
+                    store.syncing
+                        ? const PopupMenuItem(value: _signOut, child: Text('Sign out'))
+                        : const PopupMenuItem(value: _signIn, child: Text('Sync across devices')),
                   ],
                 ),
               ),

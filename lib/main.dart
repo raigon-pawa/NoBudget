@@ -1,9 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-import 'firebase_options.dart';
 import 'login.dart';
 import 'pages.dart';
 import 'sheets.dart';
@@ -11,21 +7,36 @@ import 'store.dart';
 import 'ui.dart';
 
 final _messenger = GlobalKey<ScaffoldMessengerState>();
+final _navigator = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // Keep a copy on the device, so the app opens and saves offline (Android does by default, a browser does not).
-  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true);
-  // Against the local Firebase emulators: flutter run --dart-define=EMULATOR=true
-  if (const bool.fromEnvironment('EMULATOR')) {
-    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
-    FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
-  }
+  await store.open(); // the app runs from this device's copy; signing in only adds sync
   store.onError = (m) => _messenger.currentState?.showSnackBar(SnackBar(content: Text(m)));
-  FirebaseAuth.instance.authStateChanges().listen((user) => user == null ? store.close() : store.openCloud(user.uid));
+  store.askKeepDevice = _askKeepDevice;
   runApp(const App());
+  // Check for changes from other devices on return, and send our own before the app goes away.
+  AppLifecycleListener(onResume: store.pull, onHide: store.flush);
+  connectFirebase();
 }
+
+Future<bool> _askKeepDevice() async =>
+    await showDialog<bool>(
+      context: _navigator.currentContext!,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Which budget do you want?'),
+        content: const Text(
+          'This device and your account were both changed since they last synced. '
+          'The one you pick replaces the other.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Use the account's")),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text("Keep this device's")),
+        ],
+      ),
+    ) ??
+    false;
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -35,6 +46,7 @@ class App extends StatelessWidget {
     title: 'NoBudget',
     debugShowCheckedModeBanner: false,
     scaffoldMessengerKey: _messenger,
+    navigatorKey: _navigator,
     theme: ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: Colors.black,
@@ -64,14 +76,7 @@ class App extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       ),
     ),
-    home: StreamBuilder(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, auth) => auth.connectionState == ConnectionState.waiting
-          ? const Scaffold()
-          : auth.data == null
-          ? const LoginPage()
-          : const Shell(),
-    ),
+    home: const Shell(),
   );
 }
 
@@ -103,16 +108,9 @@ class Shell extends StatelessWidget {
               : store.error == null
               ? const Center(child: CircularProgressIndicator())
               : Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 12,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(store.error!, textAlign: TextAlign.center),
-                      ),
-                      TextButton(onPressed: FirebaseAuth.instance.signOut, child: const Text('Sign out')),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(store.error!, textAlign: TextAlign.center),
                   ),
                 ),
         ),

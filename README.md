@@ -1,8 +1,9 @@
 # NoBudget
 
 A personal budgeting app for Android and the web, built with Flutter. Everything is entered by hand:
-there are no bank connections. You sign in with Google or with an email and password, and your budget is kept in
-your own private space in the cloud (Firebase), so it is backed up and the same on every device.
+there are no bank connections. It needs no account: your budget is kept on your device and the app works
+offline, the website too once it has been opened. To back it up and use it on several devices, sign in with
+Google or an email and password from the menu, and a copy is kept in your own private space in the cloud (Firebase).
 
 **Try it in a browser: <https://nobudget.raigonpawa.dev/>**
 
@@ -34,6 +35,9 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Repeating transactions**: mark rent, pay or a subscription as weekly, fortnightly or monthly and
   it is added for you when it falls due.
 - **Search**: find any transaction by note, category, account or amount.
+- **Sync**: sign in from the menu on the net worth card ("Sync across devices") to keep a copy in the
+  cloud and the same budget on every device. Signing out keeps the data on the device unless you
+  choose to remove it.
 - **Backup**: copy everything as text from the menu on the net worth card, and paste it back to
   restore, on the same device or another one.
 - **Currencies**: each account has a country and currency (32 to pick from), and adding an account
@@ -55,8 +59,8 @@ NoBudget is not affiliated with any of the banks or lenders named above or sugge
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install), plus an Android device or
 emulator for the app, or Chrome for the website.
 
-You also need a Firebase project of your own (the free Spark plan is enough) with a Firestore
-database created. Connect the code to it once:
+Sync needs a Firebase project of your own (the free Spark plan is enough) with a Firestore
+database created. Connect the code to it once (the app does not build without `lib/firebase_options.dart`):
 
 ```sh
 firebase login
@@ -100,10 +104,14 @@ cd /tmp/nobudget-site && touch .nojekyll && echo nobudget.raigonpawa.dev > CNAME
 git push -f https://github.com/raigon-pawa/NoBudget.git gh-pages
 ```
 
-Each account's data is one Firestore document that only that account can read or write
-([`firestore.rules`](firestore.rules)). The app keeps a copy on the device, so it opens and saves
-offline and catches up when the connection returns. Anything entered on a device before sign-in
-existed moves into the first account created there. One document holds about 5,000 transactions.
+The app keeps everything on the device (SharedPreferences, which is localStorage on the web), and
+works the same signed in or not. Signed in, each account's data is also one Firestore document that
+only that account can read or write ([`firestore.rules`](firestore.rules)). To stay well inside the
+free limits, the app reads it when it opens or comes back to the front (at most once a minute), and
+writes it once, 10 seconds after changes stop or when the app goes to the background; signed-out use
+makes no requests at all. A new device takes the account's data; if both the device and the account
+changed since they last synced, the app asks which one to keep. One document holds about 5,000
+transactions. On the web, `web/sw.js` keeps a copy of the site so it opens offline.
 
 To try changes without touching real data, run the Firebase emulators and point the app at them:
 
@@ -117,9 +125,9 @@ flutter run -d chrome --dart-define=EMULATOR=true
 | File | What it holds |
 |---|---|
 | `lib/models.dart` | Accounts, transactions, goals, currencies and the money maths |
-| `lib/store.dart` | The in-memory state the UI listens to, saved as one JSON document in the user's Firestore document |
-| `lib/login.dart` | Sign in with Google or an email, create an account, reset a password |
-| `lib/main.dart` | Firebase start-up, the sign-in gate, theme and the shell: bottom bar on a phone, side rail on a wide screen |
+| `lib/store.dart` | The in-memory state the UI listens to, saved as one JSON document on the device and synced with the user's Firestore document |
+| `lib/login.dart` | Firebase start-up, sign in with Google or an email, create an account, reset a password |
+| `lib/main.dart` | Start-up, theme and the shell: bottom bar on a phone, side rail on a wide screen |
 | `lib/pages.dart` | The four tabs |
 | `lib/sheets.dart` | Forms for transactions, accounts and goals |
 | `lib/ui.dart` | Shared widgets, categories and formatting |

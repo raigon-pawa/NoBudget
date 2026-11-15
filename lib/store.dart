@@ -9,10 +9,18 @@ import 'models.dart';
 
 final store = Store();
 
-const _key = 'data';
+const _key = 'data', _revKey = 'syncedRev', _unsentKey = 'unsent', _noteKey = 'browserNoteClosed';
 
-/// All data, held in memory and saved as one JSON document: in the signed-in user's Firestore document
-/// ([openCloud]), or on this device ([open], which the tests use).
+/// The signed-in user's copy in the cloud: one document holding `data` (the [Store.export] text) and `rev`
+/// (an id that changes with every save). Firestore in the app, a map in the tests.
+typedef Cloud = ({Future<Map<String, dynamic>?> Function() get, Future<void> Function(Map<String, dynamic>) set});
+
+/// All data, held in memory and saved as one JSON document on this device. Signing in adds a copy in the
+/// cloud, which is read when the app opens or comes back to the front and written a few seconds after
+/// changes stop, to stay far inside Firebase's free daily limits.
+// shortcut: everything is one document, which Firestore caps at 1 MiB (around 5,000 transactions), and when
+// both this device and the cloud changed since they last met the user picks one whole; merge per record
+// (balances worked out from transactions) if people edit offline on two devices.
 class Store extends ChangeNotifier {
   List<Account> accounts = [];
   List<Tx> txs = []; // newest first
@@ -23,67 +31,167 @@ class Store extends ChangeNotifier {
   Map<String, double> rates = {}; // units per US dollar, only for currencies whose rate the user changed
   bool loaded = false;
 
-  String? error; // why the data could not be opened
-  void Function(String message)? onError; // a save that failed
+  String? error; // why the data on this device could not be opened
+  void Function(String message)? onError; // a sync that failed
+  Future<bool> Function()? askKeepDevice; // both this device and the account changed: true keeps this device's
 
   late SharedPreferences _prefs;
-  DocumentReference<Map<String, dynamic>>? _doc;
-  StreamSubscription<Object?>? _sub;
+  Cloud? _cloud;
+  String? _uid;
+  String? _rev; // the cloud's rev when this device last matched it
+  bool _unsent = false; // changed since it last matched the cloud
+  String? _matched; // the text it last matched, to skip saves that change nothing
+  Timer? _timer;
+  Future<void>? _pushing;
+  DateTime? _pulledAt;
+  bool _pulling = false;
+
+  bool get syncing => _cloud != null;
+  bool get unsent => _unsent;
 
   Future<void> open([DateTime? now]) async {
     _prefs = await SharedPreferences.getInstance();
-    _start(_prefs.getString(_key), now ?? DateTime.now());
+    try {
+      _start(_prefs.getString(_key), now ?? DateTime.now());
+    } catch (e) {
+      error = 'Could not read the data saved on this device: $e';
+      notifyListeners();
+    }
   }
 
-  /// Opens the data of the signed-in user [uid] and follows changes made on their other devices.
-  // shortcut: everything is one document, which Firestore caps at 1 MiB (around 5,000 transactions), and when
-  // two devices save in the same moment the later save wins whole; split it by month when either starts to bite.
-  Future<void> openCloud(String uid) async {
-    if (_doc?.id == uid) return;
-    _prefs = await SharedPreferences.getInstance();
-    final doc = _doc = FirebaseFirestore.instance.doc('users/$uid');
-    _sub = doc.snapshots().listen(
-      (snap) {
-        final raw = snap.data()?['data'] as String?;
-        if (raw == null) {
-          // "Not there" from the offline cache says nothing: wait for the server, or a new device would
-          // overwrite the account with a fresh start.
-          if (snap.metadata.isFromCache) return;
-          // A new account starts from what this device held before sign-in, if anything.
-          _start(_prefs.getString(_key), DateTime.now());
-          _prefs.remove(_key);
-          _changed();
-        } else if (!loaded || (!snap.metadata.hasPendingWrites && raw != export())) {
-          // Not our own save coming back: the first load, or a change from another device.
-          _start(raw, DateTime.now());
-        }
-      },
-      onError: (Object e) {
-        error = 'Could not open your data: $e';
-        notifyListeners();
-      },
-    );
-  }
+  /// Whether the website's note that data lives only in this browser was closed.
+  bool get browserNoteClosed => _prefs.getBool(_noteKey) ?? false;
 
-  /// Forgets everything in memory when the user signs out. Their data stays in the cloud.
-  void close() {
-    _sub?.cancel();
-    _doc = null;
-    accounts = [];
-    txs = [];
-    goals = [];
-    budgets = {};
-    recurring = [];
-    home = 'AUD';
-    rates = {};
-    loaded = false;
-    error = null;
+  void closeBrowserNote() {
+    _prefs.setBool(_noteKey, true);
     notifyListeners();
+  }
+
+  /// Starts keeping the signed-in user [uid]'s cloud copy in step with this device.
+  Future<void> startSync(String uid) async {
+    if (_uid == uid) return;
+    final doc = FirebaseFirestore.instance.doc('users/$uid');
+    _uid = uid;
+    await sync((
+      get: () async => (await doc.get(const GetOptions(source: Source.server))).data(),
+      set: doc.set,
+    ));
+  }
+
+  @visibleForTesting
+  Future<void> sync(Cloud cloud) async {
+    _cloud = cloud;
+    _rev = _prefs.getString(_revKey);
+    // Never synced here: anything this device saved is still to be sent.
+    _unsent = _prefs.getBool(_unsentKey) ?? _prefs.containsKey(_key);
+    _matched = null;
+    _pulledAt = null;
+    if (!_prefs.containsKey(_key)) {
+      // Nothing of its own on this device: show the account's data, not the starter accounts.
+      loaded = false;
+      notifyListeners();
+    }
+    await pull();
+  }
+
+  /// Stops syncing when the user signs out. The data stays on this device unless [forget].
+  void stopSync({bool forget = false}) {
+    _timer?.cancel();
+    _cloud = null;
+    _uid = null;
+    _prefs.remove(_revKey);
+    _prefs.remove(_unsentKey);
+    if (forget) {
+      _prefs.remove(_key);
+      _start(null, DateTime.now());
+    }
+  }
+
+  /// Reads the cloud copy, at most once a minute unless [force]: when the app opens or comes back to the front.
+  Future<void> pull({bool force = false}) async {
+    final cloud = _cloud, at = _pulledAt;
+    if (cloud == null || _pulling || (!force && at != null && DateTime.now().difference(at).inMinutes < 1)) return;
+    _pulling = true;
+    try {
+      // Our own save must land first, or it would look like a change made elsewhere.
+      try {
+        await _pushing;
+      } catch (_) {}
+      final m = await cloud.get();
+      if (cloud != _cloud) return; // signed out meanwhile
+      _pulledAt = DateTime.now();
+      final raw = m?['data'] as String?, rev = m?['rev'] as String? ?? ''; // documents from before sync had no rev
+      if (raw == null) {
+        _setUnsent(true); // a new account starts from this device
+        await flush();
+      } else if (raw == export()) {
+        _matchedCloud(rev, raw);
+      } else if (rev == _rev || (_unsent && await askKeepDevice?.call() == true)) {
+        // The cloud has not changed since this device last matched it, or the user keeps this device's.
+        if (cloud != _cloud) return;
+        _setUnsent(true);
+        await flush();
+      } else if (cloud == _cloud) {
+        _start(raw, DateTime.now()); // parses first, so a bad document changes nothing
+        _prefs.setString(_key, export());
+        _matchedCloud(rev, raw);
+      }
+    } on FirebaseException catch (e) {
+      if (e.code != 'unavailable') onError?.call('Could not sync: ${e.message}'); // offline: try again later
+    } catch (e) {
+      onError?.call('Could not read your synced data: $e');
+    } finally {
+      _pulling = false;
+      if (!loaded) {
+        loaded = true; // offline on a new device: start fresh, the account's data is asked for again later
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Sends unsent changes to the cloud now: a few seconds after the last change, or when the app goes away.
+  Future<void> flush() async {
+    _timer?.cancel();
+    final cloud = _cloud, text = export();
+    // One save at a time: offline, the newest changes follow when the waiting one lands, instead of a write each.
+    if (cloud == null || !_unsent || _pushing != null) return;
+    if (text == _matched) return _setUnsent(false);
+    final rev = newId();
+    final push = _pushing = cloud.set({'data': text, 'rev': rev});
+    try {
+      await push; // offline, Firestore keeps it and sends it once the connection is back
+      _pushing = null;
+      if (cloud != _cloud) return;
+      _matchedCloud(rev, text);
+      if (_unsent && !(_timer?.isActive ?? false)) await flush(); // changed meanwhile, and nothing else will send it
+    } on FirebaseException catch (e) {
+      onError?.call('Could not sync: ${e.message}'); // stays unsent, so it is tried again
+    } finally {
+      if (_pushing == push) _pushing = null;
+    }
+  }
+
+  void _matchedCloud(String rev, String text) {
+    _rev = rev;
+    _matched = text;
+    _prefs.setString(_revKey, rev);
+    if (export() == text) _setUnsent(false); // not if it changed again meanwhile
+  }
+
+  void _setUnsent(bool v) {
+    _unsent = v;
+    _prefs.setBool(_unsentKey, v);
   }
 
   void _start(String? raw, DateTime now) {
     if (raw == null) {
       accounts = [for (final (i, a) in presets.indexed) Account.fromMap(newId(i), a.toMap())];
+      txs = [];
+      goals = [];
+      budgets = {};
+      recurring = [];
+      home = 'AUD';
+      rates = {};
     } else {
       _load(raw);
     }
@@ -141,12 +249,11 @@ class Store extends ChangeNotifier {
   void _changed() {
     _sort();
     notifyListeners();
-    final doc = _doc;
-    if (doc == null) {
-      _prefs.setString(_key, export());
-    } else {
-      // Offline, this waits and is sent once the connection is back. A refused save is undone by Firestore.
-      doc.set({'data': export()}).catchError((Object e) => onError?.call('Could not save: $e'));
+    _prefs.setString(_key, export());
+    if (_cloud != null) {
+      _setUnsent(true);
+      _timer?.cancel();
+      _timer = Timer(const Duration(seconds: 10), flush);
     }
   }
 

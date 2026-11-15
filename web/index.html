@@ -32,7 +32,15 @@
 <body>
   <div id="loading">NoBudget</div>
   <script>
-    addEventListener('flutter-first-frame', () => document.getElementById('loading').remove());
+    // sw.js keeps a copy of the site so it opens offline; ask the browser not to clear the saved data.
+    navigator.serviceWorker?.register('sw.js');
+    navigator.storage?.persist?.();
+    addEventListener('flutter-first-frame', () => {
+      document.getElementById('loading').remove();
+      navigator.serviceWorker?.ready.then((r) =>
+        r.active.postMessage([location.href.split('#')[0], ...performance.getEntriesByType('resource').map((e) => e.name)]),
+      );
+    });
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

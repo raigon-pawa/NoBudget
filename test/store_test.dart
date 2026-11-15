@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nobudget/models.dart';
 import 'package:nobudget/store.dart';
@@ -138,5 +140,155 @@ void main() {
     expect(() => again.restore(backup.replaceFirst('"currency":"USD"', '"currency":"XXX"')), throwsFormatException);
     expect(() => again.restore(backup.replaceFirst('"home":"USD"', '"home":"XXX"')), throwsFormatException);
     expect(again.export(), backup);
+  });
+
+  group('sync', () {
+    // A stand-in for the user's Firestore document that counts what would be billed.
+    late Map<String, dynamic>? doc;
+    var reads = 0, writes = 0;
+    Cloud cloud() => (
+      get: () async {
+        reads++;
+        return doc;
+      },
+      set: (m) async {
+        writes++;
+        doc = m;
+      },
+    );
+    setUp(() {
+      doc = null;
+      reads = writes = 0;
+    });
+
+    Future<String> otherDevice() async {
+      SharedPreferences.setMockInitialValues({});
+      final o = Store();
+      await o.open();
+      o.setBudget('Fun', 999);
+      return o.export();
+    }
+
+    test('signed out uses no cloud; signing in uploads to a new account once', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = Store();
+      await s.open();
+      s.setBudget('Fun', 1000);
+      await s.sync(cloud());
+      expect((reads, writes), (1, 1));
+      expect(doc!['data'], s.export());
+      expect(s.unsent, isFalse);
+    });
+
+    test('changes go up as one write, and saves that change nothing are skipped', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = Store();
+      await s.open();
+      await s.sync(cloud());
+      writes = 0;
+      final bank = s.accounts.first.id!;
+      for (var i = 0; i < 5; i++) {
+        s.addTx(Tx(type: TxType.income, amount: 100, accountId: bank, date: DateTime(2026, 11, 1)));
+      }
+      expect(writes, 0);
+      await s.flush();
+      expect(writes, 1);
+      // A save still waiting (offline) holds back the next one; the newest changes follow it as one write.
+      final waiting = Completer<void>();
+      final slow = (get: cloud().get, set: (Map<String, dynamic> m) async {
+        await waiting.future;
+        writes++;
+        doc = m;
+      });
+      await s.sync(slow);
+      s.setBudget('A', 1);
+      final first = s.flush();
+      s.setBudget('B', 1);
+      await s.flush();
+      s.setBudget('C', 1);
+      await s.flush();
+      waiting.complete();
+      await first;
+      expect(writes, 3); // 1 before, then the waiting save and one with B and C
+      expect(doc!['data'], s.export());
+      s.setBudget('Fun', 0); // no budget before either
+      await s.flush();
+      await s.flush();
+      expect(writes, 3);
+      s.stopSync();
+    });
+
+    test("a new device takes the account's data without asking, even from before sync had revs", () async {
+      doc = {'data': await otherDevice()}; // no rev
+      SharedPreferences.setMockInitialValues({});
+      final s = Store()..askKeepDevice = () => fail('should not ask');
+      await s.open();
+      await s.sync(cloud());
+      expect(s.budgets, {'Fun': 999});
+      expect(writes, 0);
+
+      // Its own later change is sent, again without asking: the account has not changed since.
+      s.setBudget('Rent', 5);
+      await s.pull(force: true);
+      expect(writes, 1);
+      expect(doc!['data'], s.export());
+      s.stopSync();
+    });
+
+    test('an unsent change survives a restart and is sent without asking', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = Store();
+      await s.open();
+      await s.sync(cloud());
+      s.setBudget('Fun', 1); // app closed before the delayed write
+      s.stopSync(); // stand-in for the process ending, minus forgetting the sync state:
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('syncedRev', doc!['rev'] as String);
+      await prefs.setBool('unsent', true);
+
+      final again = Store()..askKeepDevice = () => fail('should not ask');
+      await again.open();
+      await again.sync(cloud());
+      expect(doc!['data'], again.export());
+      expect(again.budgets, {'Fun': 1});
+    });
+
+    test('when both changed the user picks one', () async {
+      for (final keep in [true, false]) {
+        doc = {'data': await otherDevice(), 'rev': 'elsewhere'};
+        final theirs = doc!['data'];
+        SharedPreferences.setMockInitialValues({});
+        final s = Store()..askKeepDevice = () async => keep;
+        await s.open();
+        s.setBudget('Mine', 1);
+        await s.sync(cloud());
+        expect(s.budgets, keep ? {'Mine': 1} : {'Fun': 999});
+        expect(doc!['data'], keep ? s.export() : theirs);
+        expect(s.unsent, isFalse);
+        s.stopSync();
+      }
+    });
+
+    test('pulls at most once a minute; signing out keeps or forgets the data', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = Store();
+      await s.open();
+      s.setBudget('Fun', 3);
+      await s.sync(cloud());
+      await s.pull();
+      await s.pull();
+      expect(reads, 1);
+
+      s.stopSync();
+      expect(s.budgets, {'Fun': 3});
+      final reopened = Store();
+      await reopened.open();
+      expect(reopened.budgets, {'Fun': 3});
+      reopened.stopSync(forget: true);
+      expect(reopened.budgets, isEmpty);
+      final fresh = Store();
+      await fresh.open();
+      expect(fresh.budgets, isEmpty);
+    });
   });
 }

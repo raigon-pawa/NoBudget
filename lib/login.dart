@@ -1,9 +1,33 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'firebase_options.dart';
+import 'store.dart';
 import 'ui.dart';
+
+/// Starts Firebase, which only sync needs. False when it cannot, e.g. a website opened offline: the app
+/// works without it, and signing in tries again.
+Future<bool> connectFirebase() async {
+  if (Firebase.apps.isNotEmpty) return true;
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  } catch (_) {
+    return false;
+  }
+  // The device copy is the store's own: no second one in Firestore's cache.
+  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
+  // Against the local Firebase emulators: flutter run --dart-define=EMULATOR=true
+  if (const bool.fromEnvironment('EMULATOR')) {
+    await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+  }
+  FirebaseAuth.instance.authStateChanges().listen((user) => user == null ? store.stopSync() : store.startSync(user.uid));
+  return true;
+}
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -42,8 +66,10 @@ class _LoginPageState extends State<LoginPage> {
     } on GoogleSignInException catch (e) {
       result = e.code == GoogleSignInExceptionCode.canceled ? null : 'Google sign-in did not work (${e.code.name}).';
     }
-    // After a successful sign-in this page is already gone.
-    if (mounted) {
+    if (!mounted) return;
+    if (FirebaseAuth.instance.currentUser != null) {
+      Navigator.pop(context); // signed in: back to the app, which now syncs
+    } else {
       setState(() {
         busy = false;
         message = result;
@@ -78,6 +104,7 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     final ok = !busy && email.text.contains('@') && password.text.length >= 6;
     return Scaffold(
+      appBar: AppBar(backgroundColor: Colors.black),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -95,8 +122,8 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     Text(
                       register
-                          ? 'Create an account to keep your budget private, backed up and on all your devices.'
-                          : 'Sign in to your budget.',
+                          ? 'Create an account to back up your budget and use it on all your devices.'
+                          : 'Sign in to back up your budget and use it on all your devices.',
                       style: const TextStyle(color: dim),
                     ),
                     const SizedBox(height: 10),
