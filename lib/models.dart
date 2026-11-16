@@ -324,6 +324,32 @@ List<int> netWorthTrend(int current, Iterable<Tx> txs, DateTime now, {int days =
   return trend;
 }
 
+/// The transactions as CSV for a spreadsheet, one row each in the order given. Expenses are negative.
+String txCsv(Iterable<Tx> txs, Map<String, Account> accounts) {
+  String cell(String s) {
+    if (s.startsWith(RegExp(r'[=+\-@]'))) s = "'$s"; // a spreadsheet would run it as a formula
+    return s.contains(RegExp('[",\r\n]')) ? '"${s.replaceAll('"', '""')}"' : s;
+  }
+
+  String day(DateTime d) => '${d.year}-${'${d.month}'.padLeft(2, '0')}-${'${d.day}'.padLeft(2, '0')}';
+  String amount(int cents) => (cents / 100).toStringAsFixed(2);
+  return [
+    'Date,Type,Amount,Currency,Account,To account,Arrived,Category,Note',
+    for (final t in txs)
+      [
+        day(t.date),
+        t.type.name,
+        amount(t.type == TxType.expense ? -t.amount : t.amount),
+        accounts[t.accountId]?.currency ?? '',
+        cell(accounts[t.accountId]?.name ?? ''),
+        cell(accounts[t.toAccountId]?.name ?? ''),
+        t.type == TxType.transfer ? amount(t.toAmount ?? t.amount) : '',
+        cell(t.category),
+        cell(t.note),
+      ].join(','),
+  ].join('\r\n');
+}
+
 bool sameMonth(DateTime a, DateTime b) => a.year == b.year && a.month == b.month;
 bool sameDay(DateTime a, DateTime b) => sameMonth(a, b) && a.day == b.day;
 

@@ -76,6 +76,24 @@ void main() {
     expect(parseCents('abc'), null);
   });
 
+  test('transactions as CSV', () {
+    final accounts = {
+      'a': const Account(id: 'a', name: 'Bank, Main', type: AccountType.bank, color: 0),
+      'b': const Account(id: 'b', name: 'Wise', type: AccountType.bank, color: 0, currency: 'USD'),
+    };
+    final csv = txCsv([
+      Tx(type: TxType.expense, amount: 1250, accountId: 'a', category: 'Fun', note: 'Say "hi"', date: DateTime(2026)),
+      Tx(type: TxType.income, amount: 100000, accountId: 'a', note: '=HYPERLINK("x")', date: DateTime(2026, 3, 5)),
+      Tx(type: TxType.transfer, amount: 1000, accountId: 'a', toAccountId: 'b', toAmount: 650, date: DateTime(2026, 4)),
+    ], accounts);
+    expect(csv.split('\r\n'), [
+      'Date,Type,Amount,Currency,Account,To account,Arrived,Category,Note',
+      '2026-01-01,expense,-12.50,AUD,"Bank, Main",,,Fun,"Say ""hi"""',
+      '2026-03-05,income,1000.00,AUD,"Bank, Main",,,,"\'=HYPERLINK(""x"")"',
+      '2026-04-01,transfer,10.00,AUD,"Bank, Main",Wise,6.50,,',
+    ]);
+  });
+
   test('weekly amount needed for a goal', () {
     Goal goal({int saved = 0, DateTime? deadline}) =>
         Goal(name: 'Trip', target: 100000, saved: saved, deadline: deadline);

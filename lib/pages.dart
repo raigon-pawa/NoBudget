@@ -50,6 +50,11 @@ Future<void> _backup(BuildContext context) async {
   if (context.mounted) _say(context, 'Backup copied. Paste it somewhere safe, like a note to yourself.');
 }
 
+Future<void> _csv(BuildContext context) async {
+  await Clipboard.setData(ClipboardData(text: txCsv(store.txs, {for (final a in store.accounts) a.id!: a})));
+  if (context.mounted) _say(context, 'Transactions copied as CSV. Paste them into a spreadsheet.');
+}
+
 Future<void> _currencies(BuildContext context) => showSheet(context, const CurrencySheet());
 
 Future<void> _signIn(BuildContext context) async {
@@ -242,6 +247,7 @@ class Overview extends StatelessWidget {
                     const PopupMenuItem(value: _currencies, child: Text('Currencies')),
                     const PopupMenuItem(value: _backup, child: Text('Copy a backup')),
                     const PopupMenuItem(value: _restore, child: Text('Restore a backup')),
+                    const PopupMenuItem(value: _csv, child: Text('Copy transactions as CSV')),
                     store.syncing
                         ? const PopupMenuItem(value: _signOut, child: Text('Sign out'))
                         : const PopupMenuItem(value: _signIn, child: Text('Sync across devices')),
