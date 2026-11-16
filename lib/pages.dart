@@ -164,6 +164,11 @@ class Overview extends StatelessWidget {
       int sum(TxType type) => month.where((t) => t.type == type).fold(0, (s, t) => s + t.amount);
       final spent = sum(TxType.expense), income = sum(TxType.income);
       final cash = all.cash, debt = all.debt;
+      final soon = upcoming(store.recurring, DateTime.now());
+      final toPay = store
+          .inHome(soon.map((s) => s.$1.tx))
+          .where((t) => t.type == TxType.expense)
+          .fold(0, (sum, t) => sum + t.amount);
 
       // shortcut: past days are valued at today's rates, so the line shows saving and spending, not
       // currency swings; keep a rate history if those ever need to show.
@@ -302,6 +307,40 @@ class Overview extends StatelessWidget {
               ],
             ),
           ),
+          Header(
+            'Coming up',
+            action: toPay == 0
+                ? null
+                : Center(
+                    child: Text('${money(toPay)} to pay', style: const TextStyle(color: dim, fontSize: 13)),
+                  ),
+          ),
+          Panel(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: soon.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                    child: Text(
+                      'Nothing due in the next 30 days. Set rent, pay or a subscription to repeat when you add it.',
+                      style: _empty,
+                    ),
+                  )
+                : Column(
+                    children: [
+                      for (final (r, date) in soon.take(6))
+                        TxTile(
+                          r.tx,
+                          detail: '${_dayName(date)} · ${repeatLabel(r.every)}',
+                          onTap: () => showSheet(context, TxSheet(recurring: r)),
+                        ),
+                      if (soon.length > 6)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text('and ${soon.length - 6} more', style: _empty),
+                        ),
+                    ],
+                  ),
+          ),
         ],
         right: [
           const Header('This month'),
@@ -407,6 +446,16 @@ class _Figure extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// "Today", "Tomorrow", or the weekday and date.
+String _dayName(DateTime d) {
+  final days = DateUtils.dateOnly(d).difference(DateUtils.dateOnly(DateTime.now())).inDays;
+  return switch (days) {
+    <= 0 => 'Today', // due but not added yet: the app adds it next time it opens
+    1 => 'Tomorrow',
+    _ => DateFormat('EEE d MMM').format(d),
+  };
 }
 
 // ------------------------------------------------------------------- spending
@@ -566,15 +615,7 @@ class _SpendingState extends State<Spending> {
                     TxTile(
                       r.tx,
                       detail: '${repeatLabel(r.every)} · next ${DateFormat('d MMM').format(r.next)}',
-                      onTap: () async {
-                        if (await confirm(
-                          context,
-                          'Stop repeating this? Transactions it already added stay.',
-                          action: 'Stop',
-                        )) {
-                          store.deleteRecurring(r);
-                        }
-                      },
+                      onTap: () => showSheet(context, TxSheet(recurring: r)),
                     ),
                 ],
               ),

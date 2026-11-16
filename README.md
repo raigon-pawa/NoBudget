@@ -33,7 +33,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Debts**: buy-now-pay-later, credit and loan accounts with the amount owed, available credit
   and one-tap repayments.
 - **Repeating transactions**: mark rent, pay or a subscription as weekly, fortnightly or monthly and
-  it is added for you when it falls due.
+  it is added for you when it falls due. What is due in the next 30 days shows under "Coming up" on the
+  Overview; tap one to change its amount, date or how often it repeats, or to stop it.
 - **Search**: find any transaction by note, category, account or amount.
 - **Sync**: sign in from the menu on the net worth card ("Sync across devices") to keep a copy in the
   cloud and the same budget on every device. Signing out keeps the data on the device unless you

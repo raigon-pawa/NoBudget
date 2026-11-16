@@ -405,6 +405,14 @@ class Store extends ChangeNotifier {
     _changed();
   }
 
+  /// Replaces a repeating transaction with [r], adding at once anything it makes due.
+  void saveRecurring(Recurring r) {
+    final i = recurring.indexWhere((x) => x.id == r.id);
+    if (i >= 0) recurring[i] = r;
+    _addDue(DateTime.now());
+    _changed();
+  }
+
   void deleteRecurring(Recurring r) {
     recurring.removeWhere((x) => x.id == r.id);
     _changed();

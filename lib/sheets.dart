@@ -63,8 +63,9 @@ Widget _currencyPicker(String label, String value, ValueChanged<String> onPick, 
 // ---------------------------------------------------------------- transaction
 
 class TxSheet extends StatefulWidget {
-  const TxSheet({super.key, this.tx, this.type = TxType.expense, this.toAccountId});
+  const TxSheet({super.key, this.tx, this.recurring, this.type = TxType.expense, this.toAccountId});
   final Tx? tx;
+  final Recurring? recurring; // editing what a repeating transaction adds from now on
   final TxType type;
   final String? toAccountId;
 
@@ -73,20 +74,21 @@ class TxSheet extends StatefulWidget {
 }
 
 class _TxSheetState extends State<TxSheet> {
-  late var type = widget.tx?.type ?? widget.type;
-  late final amount = TextEditingController(text: centsText(widget.tx?.amount ?? 0));
-  late final received = TextEditingController(text: centsText(widget.tx?.toAmount ?? 0));
-  late var typedReceived = widget.tx?.toAmount != null; // otherwise it follows the amount at the saved rate
-  late final note = TextEditingController(text: widget.tx?.note);
-  late String? to = widget.tx?.toAccountId ?? widget.toAccountId;
+  late final base = widget.tx ?? widget.recurring?.tx;
+  late var type = base?.type ?? widget.type;
+  late final amount = TextEditingController(text: centsText(base?.amount ?? 0));
+  late final received = TextEditingController(text: centsText(base?.toAmount ?? 0));
+  late var typedReceived = base?.toAmount != null; // otherwise it follows the amount at the saved rate
+  late final note = TextEditingController(text: base?.note);
+  late String? to = base?.toAccountId ?? widget.toAccountId;
   // New entries start on the last used account; repayments start from a bank account.
   late String? from =
-      widget.tx?.accountId ??
+      base?.accountId ??
       (widget.toAccountId == null ? store.txs.firstOrNull?.accountId : null) ??
       store.accounts.where((a) => !a.isDebt).firstOrNull?.id;
-  late var category = widget.tx?.type == TxType.expense ? widget.tx!.category : categories.keys.first;
-  late var date = widget.tx?.date ?? DateTime.now();
-  var repeat = Repeat.never;
+  late var category = base?.type == TxType.expense ? base!.category : categories.keys.first;
+  late var date = widget.recurring?.next ?? widget.tx?.date ?? DateTime.now();
+  late var repeat = widget.recurring?.every ?? Repeat.never;
 
   /// Applies [change], then works out again what a transfer between currencies delivers.
   void _update(VoidCallback change) => setState(() {
@@ -124,6 +126,10 @@ class _TxSheetState extends State<TxSheet> {
               date: date,
             );
             Navigator.pop(context);
+            if (widget.recurring case final r?) {
+              // Counts again from the new next date, so a changed date or frequency starts cleanly.
+              return store.saveRecurring(Recurring(id: r.id, tx: t, every: repeat));
+            }
             widget.tx == null ? store.addTx(t) : store.replaceTx(widget.tx!, t);
             if (repeat != Repeat.never) store.addRecurring(t, repeat);
           };
@@ -147,7 +153,7 @@ class _TxSheetState extends State<TxSheet> {
           amount,
           'Amount',
           currency: fromCurrency,
-          autofocus: widget.tx == null,
+          autofocus: base == null,
           onChanged: (_) => _update(() {}),
           onSubmitted: (_) => save?.call(),
         ),
@@ -196,18 +202,26 @@ class _TxSheetState extends State<TxSheet> {
           onSubmitted: (_) => save?.call(),
           decoration: const InputDecoration(labelText: 'Note (optional)'),
         ),
-        _gap,
+        if (widget.recurring == null) _gap else _label('Next one'),
         Row(
           children: [
-            _dateChip(context, date, '', DateTime(2020), (d) => setState(() => date = d)),
-            // Only a new entry can be set to repeat; stop one from the Repeating list.
+            _dateChip(
+              context,
+              date,
+              '',
+              widget.recurring == null ? DateTime(2020) : DateUtils.dateOnly(DateTime.now()),
+              (d) => setState(() => date = d),
+            ),
+            // New entries and repeating ones say how often they repeat; an entry already added does not.
             if (widget.tx == null) ...[
               const SizedBox(width: 8),
               PopupMenuButton<Repeat>(
                 tooltip: 'Repeat: ${repeatLabel(repeat)}',
                 onSelected: (r) => setState(() => repeat = r),
                 itemBuilder: (_) => [
-                  for (final r in Repeat.values) PopupMenuItem(value: r, child: Text(repeatLabel(r))),
+                  for (final r in Repeat.values)
+                    if (widget.recurring == null || r != Repeat.never)
+                      PopupMenuItem(value: r, child: Text(repeatLabel(r))),
                 ],
                 // The tooltip already names this control and its state for screen readers.
                 child: ExcludeSemantics(
@@ -232,6 +246,16 @@ class _TxSheetState extends State<TxSheet> {
         ),
         _gap,
         FilledButton(onPressed: save, child: const Text('Save')),
+        if (widget.recurring case final r?)
+          TextButton(
+            onPressed: () async {
+              const question = 'Stop repeating this? Transactions it already added stay.';
+              if (!await confirm(context, question, action: 'Stop')) return;
+              if (context.mounted) Navigator.pop(context);
+              store.deleteRecurring(r);
+            },
+            child: const Text('Stop repeating'),
+          ),
       ],
     );
   }
