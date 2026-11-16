@@ -25,8 +25,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 
 ## Features
 
-- **Overview**: net worth with a 30-day trend, cash, debt and credit left, and balances across your
-  bank accounts.
+- **Overview**: net worth with a 30-day trend (point at the line, or drag along it, to see any day),
+  cash, debt and credit left, and balances across your bank accounts.
 - **Spending**: expenses by category for each month, optional monthly budgets per category, and
   the full transaction history. Tap a slice of the chart to filter, swipe a transaction to delete it.
   A bar chart shows the last six months, and how this month compares with the same days of last month.
