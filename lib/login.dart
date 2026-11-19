@@ -28,6 +28,7 @@ Future<bool> connectFirebase() async {
   FirebaseAuth.instance.authStateChanges().listen(
     (user) => user == null ? store.stopSync() : store.startSync(user.uid),
   );
+  store.onCloudGone = FirebaseAuth.instance.signOut;
   return true;
 }
 

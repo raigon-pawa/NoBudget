@@ -41,6 +41,7 @@ class Store extends ChangeNotifier {
   String? error; // why the data on this device could not be opened
   void Function(String message)? onError; // a sync that failed
   Future<bool> Function()? askKeepDevice; // both this device and the account changed: true keeps this device's
+  Future<void> Function()? onCloudGone; // the account's cloud copy was deleted elsewhere: sign out
 
   late SharedPreferences _prefs;
   Cloud? _cloud;
@@ -112,7 +113,8 @@ class Store extends ChangeNotifier {
     _uid = uid;
     await sync((
       get: () async => (await doc.get(const GetOptions(source: Source.server))).data(),
-      set: doc.set,
+      // After the first upload, update: it fails on a copy deleted elsewhere instead of recreating it.
+      set: (m) => _rev == null ? doc.set(m) : doc.update(m),
     ));
   }
 
@@ -159,7 +161,9 @@ class Store extends ChangeNotifier {
       if (cloud != _cloud) return; // signed out meanwhile
       _pulledAt = DateTime.now();
       final raw = m?['data'] as String?, rev = m?['rev'] as String? ?? ''; // documents from before sync had no rev
-      if (raw == null) {
+      if (raw == null && _rev != null) {
+        await _cloudGone(); // it matched a copy before, so the account was deleted elsewhere
+      } else if (raw == null) {
         _setUnsent(true); // a new account starts from this device
         await flush();
       } else if (raw == export()) {
@@ -203,10 +207,18 @@ class Store extends ChangeNotifier {
       _matchedCloud(rev, text);
       if (_unsent && !(_timer?.isActive ?? false)) await flush(); // changed meanwhile, and nothing else will send it
     } on FirebaseException catch (e) {
+      if (e.code == 'not-found') return _cloudGone();
       onError?.call('Could not sync: ${e.message}'); // stays unsent, so it is tried again
     } finally {
       if (_pushing == push) _pushing = null;
     }
+  }
+
+  /// The cloud copy is gone (the account was deleted on another device): stop, and never upload it again.
+  Future<void> _cloudGone() async {
+    stopSync();
+    onError?.call('Your synced copy was deleted, so this device signed out. Your budget is still here.');
+    await onCloudGone?.call();
   }
 
   void _matchedCloud(String rev, String text) {
