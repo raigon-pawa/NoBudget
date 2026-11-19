@@ -28,7 +28,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
 - **Overview**: net worth with a 30-day trend (point at the line, or drag along it, to see any day),
   cash, debt and credit left, and balances across your bank accounts.
 - **Spending**: expenses by category for each month, optional monthly budgets per category, and
-  the full transaction history. Tap a slice of the chart to filter, swipe a transaction to delete it.
+  the full transaction history. Tap a slice of the chart to filter, swipe a transaction to delete it
+  (or open it and tap the bin), with a few seconds to undo.
   A bar chart shows the last six months, and how this month compares with the same days of last month.
 - **Goals**: savings targets with an optional deadline and the weekly amount needed to hit it.
 - **Debts**: buy-now-pay-later, credit and loan accounts with the amount owed, available credit
@@ -55,7 +56,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
   transfer into a debt account counts as a repayment.
 
 The app starts with a set of Australian accounts (CommBank, ANZ Plus, Wise, Revolut, Up, Latitude,
-Klarna, Afterpay) that you can rename or delete, with Australia as the home country. Both can be
+Klarna, Afterpay) that you can rename, recolour (a ready-made colour or any hue) or delete, with
+Australia as the home country. Both can be
 changed: the home country is under "Currencies" in the menu on the net worth card.
 
 NoBudget is not affiliated with any of the banks or lenders named above or suggested in the app.

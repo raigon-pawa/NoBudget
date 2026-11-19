@@ -238,8 +238,10 @@ class _TxSheetState extends State<TxSheet> {
                 tooltip: 'Delete',
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () {
+                  final t = widget.tx!;
+                  showUndo(context, 'Transaction deleted', () => store.addTx(t));
                   Navigator.pop(context);
-                  store.deleteTx(widget.tx!);
+                  store.deleteTx(t);
                 },
               ),
           ],
@@ -338,6 +340,8 @@ class _AccountSheetState extends State<AccountSheet> {
           onChanged: (_) => setState(() {}),
           decoration: const InputDecoration(labelText: 'Name'),
         ),
+        _label('Colour'),
+        _ColourPicker(color, (c) => setState(() => color = c)),
         _gap,
         SegmentedButton<AccountType>(
           showSelectedIcon: false,
@@ -542,4 +546,125 @@ class CurrencySheet extends StatelessWidget {
       );
     },
   );
+}
+
+/// Ready-made account colours: the suggested banks' tints and grey.
+const _swatches = {
+  'Grey': 0xFFB0B0B0,
+  'Yellow': 0xFFFFCC00,
+  'Coral': 0xFFFF7A64,
+  'Pink': 0xFFFFB3C7,
+  'Indigo': 0xFF6C8CFF,
+  'Blue': 0xFF4AA8FF,
+  'Mint': 0xFFB2FCE4,
+  'Green': 0xFF9FE870,
+  'White': 0xFFE6E6E6,
+};
+
+/// A row of [_swatches] plus Custom, which shows a slider for any hue.
+class _ColourPicker extends StatefulWidget {
+  const _ColourPicker(this.color, this.onChanged);
+  final int color;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_ColourPicker> createState() => _ColourPickerState();
+}
+
+class _ColourPickerState extends State<_ColourPicker> {
+  var _custom = false;
+  double? _dragged; // the slider's own hue: reading it back from the colour would turn 360 into 0 and drift
+
+  // Bright but soft enough to read a white letter on, like the ready-made tints.
+  static int _hue(double h) => HSVColor.fromAHSV(1, h, 0.55, 0.95).toColor().toARGB32();
+
+  @override
+  void didUpdateWidget(_ColourPicker old) {
+    super.didUpdateWidget(old);
+    if (widget.color == old.color) return;
+    if (_dragged != null && widget.color != _hue(_dragged!)) _dragged = null;
+    if (_swatches.containsValue(widget.color)) _custom = false; // a bank suggestion picked a swatch colour
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final custom = _custom || !_swatches.containsValue(widget.color);
+    final hsv = HSVColor.fromColor(Color(widget.color));
+    // Grey and white have no hue: start at purple, unlike any swatch.
+    final hue = _dragged ?? (hsv.saturation < 0.1 ? 270.0 : hsv.hue);
+    Widget swatch(String name, int c, bool selected, VoidCallback onTap, [IconData? icon]) => Semantics(
+      label: name,
+      button: true,
+      selected: selected,
+      // No Tooltip: on the web its overlay blocks taps on the rest of the sheet.
+      child: InkResponse(
+        onTap: onTap,
+        radius: 24,
+        child: SizedBox.square(
+          dimension: 48, // the tap target; the circle inside is smaller
+          child: Center(
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Color(c),
+                shape: BoxShape.circle,
+                border: Border.all(color: selected ? Colors.white : Colors.transparent, width: 2),
+              ),
+              child: Icon(selected ? Icons.check : icon, size: 18, color: Colors.black87),
+            ),
+          ),
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          children: [
+            for (final MapEntry(key: name, value: c) in _swatches.entries)
+              swatch(name, c, !custom && widget.color == c, () {
+                setState(() => _custom = false);
+                widget.onChanged(c);
+              }),
+            swatch('Custom colour', custom ? widget.color : _hue(hue), custom, () {
+              setState(() => _custom = true);
+              if (!custom) widget.onChanged(_hue(hue));
+            }, Icons.palette_outlined),
+          ],
+        ),
+        if (custom)
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // Every hue along the track, so it is clear what the slider picks.
+              Container(
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  gradient: LinearGradient(colors: [for (var h = 0; h <= 360; h += 30) Color(_hue(h.toDouble()))]),
+                ),
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: Colors.transparent,
+                  inactiveTrackColor: Colors.transparent,
+                  thumbColor: Color(widget.color),
+                ),
+                child: Slider(
+                  value: hue,
+                  max: 360,
+                  semanticFormatterCallback: (v) => 'Hue ${v.round()} degrees',
+                  onChanged: (v) {
+                    setState(() => _dragged = v);
+                    widget.onChanged(_hue(v));
+                  },
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
 }

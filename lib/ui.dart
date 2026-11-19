@@ -10,6 +10,21 @@ final tab = ValueNotifier(0);
 /// Wide enough for a side rail and two columns (tablet in landscape, desktop browser).
 bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= 900;
 
+/// On a wide screen a message is a small box, not a bar across the whole window.
+double? snackWidth(BuildContext context) => isWide(context) ? 420 : null;
+
+/// [message] with Undo for a few seconds only: a late Undo would undo whatever was changed since.
+void showUndo(BuildContext context, String message, VoidCallback undo) => ScaffoldMessenger.of(context)
+  ..clearSnackBars()
+  ..showSnackBar(
+    SnackBar(
+      width: snackWidth(context),
+      persist: false,
+      content: Text(message),
+      action: SnackBarAction(label: 'Undo', onPressed: undo),
+    ),
+  );
+
 const panelColor = Color(0xFF111111);
 const dim = Color(0xFF8A8A8A);
 const green = Color(0xFF8FD0A0);
