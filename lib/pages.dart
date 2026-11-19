@@ -38,10 +38,7 @@ Widget _cardPage(BuildContext context, List<Widget> top, List<Widget> cards) {
 
 void _say(BuildContext context, String message) => ScaffoldMessenger.of(context)
   ..clearSnackBars()
-  ..showSnackBar(SnackBar(width: _snackWidth(context), content: Text(message)));
-
-/// On a wide screen a message is a small box, not a bar across the whole window.
-double? _snackWidth(BuildContext context) => isWide(context) ? 420 : null;
+  ..showSnackBar(SnackBar(width: snackWidth(context), content: Text(message)));
 
 // shortcut: a backup travels through the clipboard, which needs no file-access dependency but tops out
 // around 1 MB on Android (several thousand transactions); save and open a file instead when that gets close.
@@ -163,16 +160,7 @@ Future<void> _reset(BuildContext context) async {
   if (ok != true || !context.mounted) return;
   final before = store.export();
   store.reset();
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        width: _snackWidth(context),
-        persist: false, // a late Undo would wipe everything added since
-        content: const Text('All data deleted.'),
-        action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(before)),
-      ),
-    );
+  showUndo(context, 'All data deleted.', () => store.restore(before));
 }
 
 /// A section title in a menu, read as a heading rather than as a disabled item.
@@ -897,16 +885,7 @@ class _SpendingState extends State<Spending> {
               ),
               onDismissed: (_) {
                 store.deleteTx(t);
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      width: _snackWidth(context),
-                      persist: false,
-                      content: const Text('Transaction deleted'),
-                      action: SnackBarAction(label: 'Undo', onPressed: () => store.addTx(t)),
-                    ),
-                  );
+                showUndo(context, 'Transaction deleted', () => store.addTx(t));
               },
               child: TxTile(t, showDate: false),
             ),
