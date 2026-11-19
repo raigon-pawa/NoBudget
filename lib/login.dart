@@ -51,15 +51,22 @@ Future<String?> deleteAccount(String password) async {
           ? await user.reauthenticateWithPopup(GoogleAuthProvider())
           : await user.reauthenticateWithCredential(await _googleCredential());
     } else {
+      if (password.isEmpty) return 'Enter your password.';
       await user.reauthenticateWithCredential(EmailAuthProvider.credential(email: user.email!, password: password));
     }
     store.stopSync(); // nothing may write the document back between the two deletes
     try {
       await FirebaseFirestore.instance.doc('users/${user.uid}').delete();
-      await user.delete();
     } catch (_) {
-      if (FirebaseAuth.instance.currentUser != null) store.startSync(user.uid); // still signed in: keep syncing
+      store.startSync(user.uid); // account and cloud copy untouched: keep syncing
       rethrow;
+    }
+    try {
+      await user.delete();
+    } on FirebaseException {
+      // The account may be gone already (only the reply lost): sign out so the budget is never uploaded again.
+      await FirebaseAuth.instance.signOut();
+      return 'The cloud copy is deleted, but not the account. Sign in again and choose Delete account.';
     }
     return null;
   } on FirebaseAuthException catch (e) {
