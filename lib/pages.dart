@@ -140,6 +140,69 @@ Future<void> _deleteAccount(BuildContext context) async {
   }
 }
 
+Future<void> _reset(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Reset all data?'),
+      content: Text(
+        'This deletes every account, transaction, goal, budget and repeating payment'
+        '${store.syncing ? ' on this device and in your account' : ''}. '
+        'Copy a backup first if you might want it back.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: red),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Reset'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  final before = store.export();
+  store.reset();
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        width: _snackWidth(context),
+        persist: false, // a late Undo would wipe everything added since
+        content: const Text('All data deleted.'),
+        action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(before)),
+      ),
+    );
+}
+
+/// A section title in a menu, read as a heading rather than as a disabled item.
+class _MenuHeading extends PopupMenuEntry<Never> {
+  const _MenuHeading(this.text);
+  final String text;
+
+  @override
+  double get height => 32;
+
+  @override
+  bool represents(void value) => false;
+
+  @override
+  State<_MenuHeading> createState() => _MenuHeadingState();
+}
+
+class _MenuHeadingState extends State<_MenuHeading> {
+  @override
+  Widget build(BuildContext context) => Container(
+    height: widget.height,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    alignment: AlignmentDirectional.centerStart,
+    child: Semantics(
+      header: true,
+      child: Text(widget.text, style: const TextStyle(color: red, fontSize: 12)),
+    ),
+  );
+}
+
 const _privacyUrl = 'https://nobudget.raigonpawa.dev/privacy.html';
 
 Future<void> _privacy(BuildContext context) => showDialog<void>(
@@ -277,8 +340,11 @@ class Overview extends StatelessWidget {
                     store.syncing
                         ? const PopupMenuItem(value: _signOut, child: Text('Sign out'))
                         : const PopupMenuItem(value: _signIn, child: Text('Sync across devices')),
-                    if (store.syncing) const PopupMenuItem(value: _deleteAccount, child: Text('Delete account')),
                     const PopupMenuItem(value: _privacy, child: Text('Privacy policy')),
+                    const PopupMenuDivider(),
+                    const _MenuHeading('Danger zone'),
+                    const PopupMenuItem(value: _reset, child: Text('Reset all data')),
+                    if (store.syncing) const PopupMenuItem(value: _deleteAccount, child: Text('Delete account')),
                   ],
                 ),
               ),

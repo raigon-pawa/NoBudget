@@ -44,6 +44,8 @@ On a wide screen the same app lays itself out in two columns with a side rail:
   restore, on the same device or another one.
 - **Spreadsheet export**: "Copy transactions as CSV" in the same menu puts every transaction on the
   clipboard, ready to paste into a spreadsheet.
+- **Danger zone**: at the bottom of the same menu, "Reset all data" empties the budget (and the synced
+  copy when signed in, with a few seconds to undo), and "Delete account" removes the account and its copy.
 - **Currencies**: each account has a country and currency (32 to pick from), and adding an account
   suggests well-known banks, wallets and pay-later providers for the country you pick. Totals are shown in
   your home currency, and a transfer between two currencies records both what left and what
