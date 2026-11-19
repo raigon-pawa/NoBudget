@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+  <title>NoBudget privacy policy</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; background: #000; color: #d6d6d6;
+      font: 16px/1.6 system-ui, sans-serif;
+    }
+    main { max-width: 680px; margin: 0 auto; padding: 48px 16px 64px; }
+    h1 { color: #fff; font-size: 32px; letter-spacing: -.5px; margin: 0 0 4px; }
+    h2 { color: #fff; font-size: 19px; margin: 36px 0 8px; }
+    p, li { color: #bdbdbd; }
+    .dim { color: #8a8a8a; }
+    a { color: #fff; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy policy</h1>
+  <p class="dim">NoBudget · last updated 19 November 2026</p>
+
+  <p>NoBudget is a budgeting app for Android and the web. This page explains what it stores, where, and how to
+    remove it. The short version: your budget stays on your device unless you choose to sign in, and nothing is
+    sold, shared for advertising or used to track you.</p>
+
+  <h2>Without an account</h2>
+  <p>Everything you enter (accounts, transactions, repeating payments, goals, debts and settings) is saved only on your device: in the
+    app's storage on Android, or in your browser's local storage on the website. It never leaves the device.
+    Uninstalling the app or clearing the site's data removes it.</p>
+
+  <h2>With an account (optional)</h2>
+  <p>Signing in backs your budget up and keeps it in step across your devices. It uses Google Firebase:</p>
+  <ul>
+    <li><strong>Sign-in</strong> (Firebase Authentication): your email address, and your password stored by
+      Firebase in hashed form. If you continue with Google, Firebase also receives your Google account's name,
+      email address and profile picture.</li>
+    <li><strong>Your budget</strong> (Cloud Firestore): a copy of your budget data, stored in Google's Sydney,
+      Australia region and readable only when signed in as you.</li>
+  </ul>
+  <p>Google processes this data on NoBudget's behalf under the
+    <a href="https://firebase.google.com/support/privacy">Firebase privacy and security terms</a>.</p>
+
+  <h2>Exchange rates</h2>
+  <p>To convert currencies, the app downloads a public list of daily rates from GitHub, at most twice a day.
+    The request contains nothing about you or your budget.</p>
+
+  <h2>What NoBudget does not do</h2>
+  <ul>
+    <li>No ads, analytics, crash reporting or tracking of any kind.</li>
+    <li>No selling or sharing of your data with anyone.</li>
+    <li>NoBudget does not log or store your IP address. As with any internet service, Google (for Firebase) and
+      GitHub (for the website and the rates file) may process it to run and protect their services.</li>
+    <li>No access to your contacts, location, camera, files or bank accounts.</li>
+  </ul>
+
+  <h2 id="delete">Deleting your data</h2>
+  <p>Signed in, open the menu and choose <strong>Delete account</strong>, in the Android app or on the website at
+    <a href="https://nobudget.raigonpawa.dev/">nobudget.raigonpawa.dev</a>. This permanently deletes your sign-in
+    and the cloud copy of your budget straight away; the budget on that device stays until you remove the app or
+    clear the site's data. If you can no longer sign in, email
+    <a href="mailto:nobudget@raigonpawa.dev">nobudget@raigonpawa.dev</a> from the account's address and it will be
+    deleted within 30 days.</p>
+
+  <h2>Children</h2>
+  <p>NoBudget is not directed at children under 13.</p>
+
+  <h2>Changes and contact</h2>
+  <p>Changes to this policy are posted on this page with a new date. Questions:
+    <a href="mailto:nobudget@raigonpawa.dev">nobudget@raigonpawa.dev</a>.</p>
+</main>
+</body>
+</html>
