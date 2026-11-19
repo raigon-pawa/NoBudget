@@ -140,6 +140,31 @@ Future<void> _deleteAccount(BuildContext context) async {
   }
 }
 
+const _privacyUrl = 'https://nobudget.raigonpawa.dev/privacy.html';
+
+Future<void> _privacy(BuildContext context) => showDialog<void>(
+  context: context,
+  builder: (dialog) => AlertDialog(
+    title: const Text('Privacy'),
+    content: const Text(
+      'Your budget is saved on this device. Signing in is optional: it keeps a copy in Google Firebase so you can '
+      'use it on your other devices, and Delete account in this menu removes that account and copy.\n\n'
+      'No ads, analytics or tracking.\n\nFull privacy policy: $_privacyUrl',
+    ),
+    actions: [
+      TextButton(
+        onPressed: () {
+          Clipboard.setData(const ClipboardData(text: _privacyUrl));
+          Navigator.pop(dialog);
+          _say(context, 'Link copied. Paste it into your browser.');
+        },
+        child: const Text('Copy link'),
+      ),
+      FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Close')),
+    ],
+  ),
+);
+
 Future<void> _restore(BuildContext context) async {
   final c = TextEditingController();
   final text = await showDialog<String>(
@@ -253,6 +278,7 @@ class Overview extends StatelessWidget {
                         ? const PopupMenuItem(value: _signOut, child: Text('Sign out'))
                         : const PopupMenuItem(value: _signIn, child: Text('Sync across devices')),
                     if (store.syncing) const PopupMenuItem(value: _deleteAccount, child: Text('Delete account')),
+                    const PopupMenuItem(value: _privacy, child: Text('Privacy policy')),
                   ],
                 ),
               ),

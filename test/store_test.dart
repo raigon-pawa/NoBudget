@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nobudget/models.dart';
 import 'package:nobudget/store.dart';
@@ -315,6 +316,38 @@ void main() {
         expect(s.unsent, isFalse);
         s.stopSync();
       }
+    });
+
+    test('a copy deleted on another device is never uploaded again', () async {
+      SharedPreferences.setMockInitialValues({});
+      var gone = 0;
+      final s = Store()..onCloudGone = () async => gone++;
+      await s.open();
+      await s.sync(cloud());
+      expect(doc, isNotNull);
+      doc = null; // Delete account on another device
+      s.setBudget('Fun', 7);
+      await s.pull(force: true);
+      expect((doc, writes, gone, s.syncing), (null, 1, 1, false));
+      expect(s.budgets, {'Fun': 7}); // the budget stays on this device
+    });
+
+    test('a save refused because the copy is gone signs out instead of recreating it', () async {
+      SharedPreferences.setMockInitialValues({});
+      var gone = 0;
+      final s = Store()..onCloudGone = () async => gone++;
+      await s.open();
+      await s.sync(cloud());
+      // Firestore refuses to update a document that was deleted meanwhile.
+      final refused = (
+        get: cloud().get,
+        set: (Map<String, dynamic> m) async => throw FirebaseException(plugin: 'cloud_firestore', code: 'not-found'),
+      );
+      await s.sync(refused); // still matches the copy it reads
+      s.setBudget('Fun', 7);
+      await s.flush();
+      expect((gone, s.syncing), (1, false));
+      expect(s.budgets, {'Fun': 7});
     });
 
     test('pulls at most once a minute; signing out keeps or forgets the data', () async {

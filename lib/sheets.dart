@@ -377,7 +377,7 @@ class _AccountSheetState extends State<AccountSheet> {
               if (context.mounted) Navigator.pop(context);
               store.deleteAccount(a);
             },
-            child: const Text('Delete account'),
+            child: Text('Delete ${a.name}'),
           ),
       ],
     );
