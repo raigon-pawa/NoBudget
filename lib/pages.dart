@@ -127,13 +127,16 @@ Future<void> _deleteAccount(BuildContext context) async {
       ],
     ),
   );
-  if (ok != true) return;
+  if (ok != true || !context.mounted) return;
+  _say(context, 'Deleting your account…');
   final error = await deleteAccount(password.text);
   if (!context.mounted) return;
   if (error != null) {
     _say(context, error);
   } else if (FirebaseAuth.instance.currentUser == null) {
     _say(context, 'Account deleted. Your budget is still on this device.');
+  } else {
+    ScaffoldMessenger.of(context).clearSnackBars(); // cancelled at Google's confirmation
   }
 }
 
