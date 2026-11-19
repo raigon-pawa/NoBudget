@@ -25,8 +25,56 @@ Future<bool> connectFirebase() async {
     await FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
     FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
   }
-  FirebaseAuth.instance.authStateChanges().listen((user) => user == null ? store.stopSync() : store.startSync(user.uid));
+  FirebaseAuth.instance.authStateChanges().listen(
+    (user) => user == null ? store.stopSync() : store.startSync(user.uid),
+  );
   return true;
+}
+
+/// The Android account chooser. The app's Google client id comes from android/app/google-services.json.
+Future<AuthCredential> _googleCredential() async {
+  await GoogleSignIn.instance.initialize();
+  final account = await GoogleSignIn.instance.authenticate();
+  return GoogleAuthProvider.credential(idToken: account.authentication.idToken);
+}
+
+/// Permanently deletes the signed-in account and its cloud copy; the budget on this device stays.
+/// [password] confirms an email account; Google accounts confirm through Google instead.
+/// Returns an error to show, or null when deleted or cancelled.
+Future<String?> deleteAccount(String password) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return null;
+  try {
+    // Firebase only deletes an account that signed in moments ago, so confirm who it is first.
+    if (user.providerData.any((p) => p.providerId == 'google.com')) {
+      kIsWeb
+          ? await user.reauthenticateWithPopup(GoogleAuthProvider())
+          : await user.reauthenticateWithCredential(await _googleCredential());
+    } else {
+      await user.reauthenticateWithCredential(EmailAuthProvider.credential(email: user.email!, password: password));
+    }
+    store.stopSync(); // nothing may write the document back between the two deletes
+    try {
+      await FirebaseFirestore.instance.doc('users/${user.uid}').delete();
+      await user.delete();
+    } catch (_) {
+      if (FirebaseAuth.instance.currentUser != null) store.startSync(user.uid); // still signed in: keep syncing
+      rethrow;
+    }
+    return null;
+  } on FirebaseAuthException catch (e) {
+    return switch (e.code) {
+      'invalid-credential' || 'wrong-password' => 'Wrong password.',
+      'user-mismatch' => 'Choose the Google account you are signed in with.',
+      'network-request-failed' => 'No internet connection.',
+      'popup-closed-by-user' || 'cancelled-popup-request' || 'web-context-canceled' => null,
+      _ => 'That did not work (${e.code}). Try again.',
+    };
+  } on GoogleSignInException catch (e) {
+    return e.code == GoogleSignInExceptionCode.canceled ? null : 'Google did not confirm it (${e.code.name}).';
+  } on FirebaseException catch (e) {
+    return e.code == 'unavailable' ? 'No internet connection.' : 'That did not work (${e.code}). Try again.';
+  }
 }
 
 class LoginPage extends StatefulWidget {
@@ -91,12 +139,7 @@ class _LoginPageState extends State<LoginPage> {
     if (kIsWeb) {
       await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
     } else {
-      // The account chooser. The app's Google client id comes from android/app/google-services.json.
-      await GoogleSignIn.instance.initialize();
-      final account = await GoogleSignIn.instance.authenticate();
-      await FirebaseAuth.instance.signInWithCredential(
-        GoogleAuthProvider.credential(idToken: account.authentication.idToken),
-      );
+      await FirebaseAuth.instance.signInWithCredential(await _googleCredential());
     }
   });
 

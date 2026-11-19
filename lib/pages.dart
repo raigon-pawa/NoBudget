@@ -89,6 +89,54 @@ Future<void> _signOut(BuildContext context) async {
   await FirebaseAuth.instance.signOut();
 }
 
+Future<void> _deleteAccount(BuildContext context) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+  final google = user.providerData.any((p) => p.providerId == 'google.com');
+  final password = TextEditingController();
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Delete ${user.email}?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: [
+          Text(
+            'This permanently deletes your account and the budget saved in it. The budget on this device stays.'
+            '${google ? ' Google will ask you to confirm.' : ''}',
+          ),
+          if (!google)
+            TextField(
+              controller: password,
+              obscureText: true,
+              autofocus: true,
+              autofillHints: const [AutofillHints.password],
+              decoration: const InputDecoration(labelText: 'Password'),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: red),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete account'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  final error = await deleteAccount(password.text);
+  if (!context.mounted) return;
+  if (error != null) {
+    _say(context, error);
+  } else if (FirebaseAuth.instance.currentUser == null) {
+    _say(context, 'Account deleted. Your budget is still on this device.');
+  }
+}
+
 Future<void> _restore(BuildContext context) async {
   final c = TextEditingController();
   final text = await showDialog<String>(
@@ -201,6 +249,7 @@ class Overview extends StatelessWidget {
                     store.syncing
                         ? const PopupMenuItem(value: _signOut, child: Text('Sign out'))
                         : const PopupMenuItem(value: _signIn, child: Text('Sync across devices')),
+                    if (store.syncing) const PopupMenuItem(value: _deleteAccount, child: Text('Delete account')),
                   ],
                 ),
               ),
@@ -385,10 +434,7 @@ class _NetWorthState extends State<_NetWorth> {
                   // Scrubbing shows each day at once; the animation is for changes to the total.
                   child: d == null
                       ? AnimatedMoney(trend.last, style: big)
-                      : Text(
-                          money(trend[d]),
-                          style: big.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                        ),
+                      : Text(money(trend[d]), style: big.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
                 ),
                 if (d != null)
                   SizedBox(
@@ -478,7 +524,14 @@ class _Spark extends CustomPainter {
       final p = at(i);
       canvas.drawLine(Offset(p.dx, 0), Offset(p.dx, size.height), Paint()..color = Colors.white38);
       canvas.drawCircle(p, 4.5, Paint()..color = Colors.white);
-      canvas.drawCircle(p, 4.5, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = panelColor);
+      canvas.drawCircle(
+        p,
+        4.5,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = panelColor,
+      );
     }
   }
 
