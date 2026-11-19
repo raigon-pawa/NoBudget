@@ -329,6 +329,17 @@ class Store extends ChangeNotifier {
     }
   }
 
+  /// Deletes every account, transaction, goal, budget and repeating payment; the currency settings stay.
+  /// When signed in, the synced copy is emptied too.
+  void reset() {
+    accounts = [];
+    txs = [];
+    goals = [];
+    budgets = {};
+    recurring = [];
+    _changed();
+  }
+
   Account? account(String? id) => accounts.where((a) => a.id == id).firstOrNull;
 
   double rate(String currency) => rates[currency] ?? daily[currency] ?? currencies[currency]!.$2;

@@ -218,6 +218,28 @@ void main() {
       return o.export();
     }
 
+    test('reset empties the device and the synced copy, keeps the currency, and can be undone', () async {
+      SharedPreferences.setMockInitialValues({});
+      final s = Store();
+      await s.open();
+      s.setHome('USD');
+      s.addTx(Tx(type: TxType.income, amount: 100, accountId: s.accounts.first.id!, date: DateTime(2026, 11, 1)));
+      s.saveGoal(Goal(name: 'Trip', target: 50000));
+      s.setBudget('Fun', 1000);
+      await s.sync(cloud());
+      final before = s.export();
+      s.reset();
+      expect(<Iterable<Object>>[s.accounts, s.txs, s.goals, s.budgets.keys, s.recurring].every((x) => x.isEmpty), isTrue);
+      expect(s.home, 'USD');
+      await s.flush();
+      expect(doc!['data'], s.export());
+      final again = Store();
+      await again.open();
+      expect(again.accounts, isEmpty); // not the starter accounts of a new install
+      s.restore(before);
+      expect(s.export(), before);
+    });
+
     test('signed out uses no cloud; signing in uploads to a new account once', () async {
       SharedPreferences.setMockInitialValues({});
       final s = Store();
